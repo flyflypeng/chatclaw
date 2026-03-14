@@ -17,7 +17,17 @@
 - **Context Awareness**: One-click sharing of the current page's URL, title, and selected content to ground your agent's responses.
 - **File Analysis**: Attach text-based files (code, logs, documents) directly in the chat for the agent to analyze.
 - **Prompt Management**: Save, manage, and quickly reuse frequently used prompts.
-- **Real-time Connection Status**: Visual indicators to monitor the health and connectivity of your agent.
+- Real-time Connection Status: Visual indicators to monitor the health and connectivity of your agent.
+
+## 🛣️ Roadmap
+
+ChatClaw is evolving rapidly. Here's what's coming next:
+
+- **Smart Context Awareness**: Instantly attach the current webpage's title and URL to your chat for context-aware assistance.
+- **Floating Action Button**: Select text on any page to trigger a floating button, allowing you to quickly open ChatClaw and discuss the content.
+- **AI-Powered Prompt Optimization**: Built-in AI optimization to refine your prompts with a single click for better results.
+- **OpenClaw Agent Integration**: Native support for the OpenClaw Agent protocol to unlock advanced agent capabilities.
+- **Extended Protocol Support**: Broader compatibility with support for HTTP+SSE and other communication protocols.
 
 ## 🚀 Getting Started
 
