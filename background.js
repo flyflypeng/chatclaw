@@ -1,5 +1,5 @@
 /**
- * MicroClaw - Background Worker
+ * ChatClaw - Background Worker
  * Handles extension lifecycle and side panel opening.
  */
 

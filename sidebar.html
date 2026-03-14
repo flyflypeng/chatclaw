@@ -1,80 +1,147 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MicroClaw Sidebar</title>
   <link rel="stylesheet" href="sidebar.css">
 </head>
+
 <body>
-  <div class="app-container">
-    <!-- Header -->
-    <header class="header">
-      <div class="header-left">
-        <div class="logo-icon">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20Z" fill="currentColor" opacity="0.2"/>
-            <path d="M12 6C10.5 6 9 7.5 9 9C9 10.5 10.5 12 12 12C13.5 12 15 10.5 15 9C15 7.5 13.5 6 12 6ZM12 10C11.45 10 11 9.55 11 9C11 8.45 11.45 8 12 8C12.55 8 13 8.45 13 9C13 9.55 12.55 10 12 10Z" fill="currentColor"/>
-            <path d="M9 14C8.45 14 8 14.45 8 15C8 15.55 8.45 16 9 16C9.55 16 10 15.55 10 15C10 14.45 9.55 14 9 14Z" fill="currentColor"/>
-            <path d="M15 14C14.45 14 14 14.45 14 15C14 15.55 14.45 16 15 16C15.55 16 16 15.55 16 15C16 14.45 15.55 14 15 14Z" fill="currentColor"/>
-            <path d="M12 17C10.5 17 9 15.5 9 14H7C7 16.76 9.24 19 12 19C14.76 19 17 16.76 17 14H15C15 15.5 13.5 17 12 17Z" fill="currentColor"/>
-          </svg>
+  <div class="mc-shell">
+    <header class="mc-topbar">
+      <div class="mc-brand" role="banner">
+        <img class="mc-brand-icon" src="icons/chatclaw-icon.png" alt="ChatClaw" width="24" height="24" />
+        <div class="mc-brand-text">
+          <div class="mc-brand-title">ChatClaw</div>
         </div>
-        <span class="title">MicroClaw</span>
       </div>
-      <div class="header-right">
-        <div id="connection-status" class="status-indicator disconnected" title="Disconnected"></div>
-        <button id="settings-btn" class="icon-btn" title="Settings">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z"/>
-            <path d="M19.4 15C20.0627 14.2046 20.0627 12.9926 19.4 12.1973L19.8256 11.6661C20.6725 10.6128 20.4449 9.07631 19.3276 8.30722L19.0496 8.11475C17.9323 7.34566 16.4262 7.64396 15.7533 8.76182L15.4243 9.30939C14.9427 9.01463 14.4283 8.76997 13.8893 8.58332L13.7196 7.97334C13.3768 6.7265 12.2048 5.86902 10.875 5.92234L10.5404 5.93583C9.21063 5.98915 8.12513 6.91899 7.91799 8.18843L7.81523 8.81849C7.30545 9.04359 6.82276 9.32594 6.37765 9.65825L5.92207 9.28821C4.98188 8.52875 3.61664 8.62933 2.80206 9.5186L2.59765 9.74237C1.78306 10.6316 1.87973 12.0101 2.81821 12.7483L3.28471 13.1152C3.02983 13.6265 2.83615 14.1705 2.71188 14.7397L2.21323 17.0253C1.96644 18.1561 2.66228 19.2638 3.73291 19.4442L4.0016 19.4895C5.07223 19.6698 6.1158 18.9959 6.38627 17.9463L6.52086 17.4245C7.03585 17.2628 7.53128 17.0527 8.00196 16.7972L8.43093 17.2917C9.29749 18.2897 10.7891 18.4214 11.8385 17.593L12.1023 17.385C13.1517 16.5566 13.2662 15.0818 12.3657 14.1721L11.9168 13.7188C12.3551 13.3429 12.7533 12.9234 13.1044 12.4659L13.7196 12.9658C14.3347 13.4656 15.2223 13.4656 15.8375 12.9658L16.2655 12.618C16.8806 12.1182 16.8806 11.2163 16.2655 10.7165L15.6504 10.2167L15.7533 10.1332C16.4262 10.6807 17.9323 10.979 19.0496 10.2099L19.3276 10.0175C20.4449 9.24838 20.6725 7.71192 19.8256 6.65863L19.4 6.12739"/>
+      <div class="mc-topbar-actions">
+        <div id="connection-status" class="mc-status-dot disconnected" title="连接断开"></div>
+        <button id="menu-btn" class="mc-iconbtn" type="button" aria-label="菜单">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round">
+            <path d="M4 7h16" />
+            <path d="M4 12h16" />
+            <path d="M4 17h16" />
           </svg>
         </button>
       </div>
     </header>
 
-    <!-- Chat Area -->
-    <main class="chat-container" id="chat-container">
-      <div class="welcome-message">
-        <h3>👋 Hello!</h3>
-        <p>I'm your MicroClaw assistant. How can I help you today?</p>
-      </div>
-      <!-- Messages will be injected here -->
+    <div id="mc-menu" class="mc-menu hidden" role="menu" aria-label="菜单">
+      <button id="menu-open-prompts" class="mc-menu-item" type="button" role="menuitem">提示词</button>
+      <button id="menu-open-settings" class="mc-menu-item" type="button" role="menuitem">设置</button>
+    </div>
+
+    <main class="mc-main">
+      <section id="home" class="mc-home">
+        <div class="mc-hero">
+          <div class="mc-hero-menu">
+            <button class="mc-iconbtn" type="button" aria-label="更多">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round">
+                <path d="M4 8h16" />
+                <path d="M4 16h16" />
+              </svg>
+            </button>
+          </div>
+          <h1 class="mc-hero-title">你好，</h1>
+          <p class="mc-hero-subtitle">我今天能帮你什么？</p>
+          <div class="mc-hero-pills" role="list">
+            <button class="mc-pill" type="button" data-fill="input" data-text="总结当前网页" role="listitem">总结网页</button>
+            <button class="mc-pill" type="button" data-fill="input" data-text="提取要点并生成TODO"
+              role="listitem">提取要点</button>
+            <button class="mc-pill" type="button" data-fill="input" data-text="把下面内容改写成更专业的邮件"
+              role="listitem">写邮件</button>
+            <button class="mc-pill" type="button" data-fill="input" data-text="Deep Research：围绕这个主题做深入调研"
+              role="listitem">Deep Research</button>
+          </div>
+          <button class="mc-onboarding" type="button">
+            <span class="mc-onboarding-icon">🌿</span>
+            新手指南
+            <span class="mc-onboarding-arrow">→</span>
+          </button>
+        </div>
+
+        <div id="tip-banner" class="mc-tip" role="note">
+          <div class="mc-tip-icon">💡</div>
+          <div class="mc-tip-text">
+            每次打开 MicroClaw 时，都会开始一个新的聊天。要继续上次的聊天，请调整
+            <button id="tip-settings-link" class="mc-link" type="button">设置</button>。
+          </div>
+          <button id="tip-close" class="mc-tip-close" type="button" aria-label="关闭">×</button>
+        </div>
+      </section>
+
+      <section class="mc-chat" id="chat-container" aria-label="对话内容"></section>
     </main>
 
-    <!-- Input Area -->
-    <footer class="input-area">
-      <div class="toolbar">
-        <button class="tool-btn" id="add-url-btn" title="Add current URL">
-          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+    <footer class="mc-composer" aria-label="消息输入">
+      <div class="mc-toolbar">
+        <button id="model-btn" class="mc-modelpill" type="button">
+          <span class="mc-modelpill-icon">⚡</span>
+          <span id="current-model-name">MicroClaw</span>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round">
+            <path d="M6 9l6 6 6-6" />
           </svg>
-          <span>Page Context</span>
         </button>
-        <button class="tool-btn" id="attach-btn" title="Attach file">
-          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2">
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
-          </svg>
-          <span>Attach</span>
-        </button>
-        <button class="tool-btn" id="prompts-btn" title="Saved Prompts">
-          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-            <polyline points="10 9 9 9 8 9"></polyline>
-          </svg>
-          <span>Prompts</span>
-        </button>
-        <input type="file" id="file-input" style="display: none">
+
+        <!-- Model Selection Menu -->
+        <div id="model-menu" class="mc-menu hidden"
+          style="bottom: 70px; left: 14px; top: auto; right: auto; width: 220px;">
+          <!-- Agents injected here -->
+        </div>
+
+        <div class="mc-toolicons" role="group" aria-label="快捷操作">
+          <button class="mc-toolicon" id="add-url-btn" type="button" aria-label="添加当前网页">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+          </button>
+          <button class="mc-toolicon" id="attach-btn" type="button" aria-label="添加附件">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path
+                d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
+          <button class="mc-toolicon" id="prompts-btn" type="button" aria-label="提示词">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <path d="M14 2v6h6" />
+              <path d="M16 13H8" />
+              <path d="M16 17H8" />
+            </svg>
+          </button>
+          <button class="mc-toolicon" id="settings-btn" type="button" aria-label="设置">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 4h-7" />
+              <path d="M10 4H3" />
+              <path d="M21 12h-9" />
+              <path d="M8 12H3" />
+              <path d="M21 20h-5" />
+              <path d="M12 20H3" />
+              <path d="M14 2v4" />
+              <path d="M10 10v4" />
+              <path d="M16 18v4" />
+            </svg>
+          </button>
+        </div>
+
+        <input type="file" id="file-input" style="display: none" />
       </div>
-      
-      <div class="input-wrapper">
-        <textarea id="user-input" placeholder="Ask anything or type '/' for prompts..." rows="1"></textarea>
-        <button id="send-btn" disabled>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+
+      <div class="mc-inputcard">
+        <textarea id="user-input" class="mc-textarea" placeholder="问任何问题" rows="1"></textarea>
+        <button id="send-btn" class="mc-send" type="button" disabled aria-label="发送">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
           </svg>
         </button>
@@ -85,25 +152,17 @@
     <div id="settings-modal" class="modal hidden">
       <div class="modal-content">
         <div class="modal-header">
-          <h3>Settings</h3>
+          <h3>Agent 设置</h3>
           <button id="close-settings" class="close-btn">&times;</button>
         </div>
         <div class="modal-body">
-          <div class="form-group">
-            <label for="gateway-url">MicroClaw Endpoint</label>
-            <input type="text" id="gateway-url" placeholder="http://localhost:18789">
+          <div id="agent-list" class="agent-list-container">
+            <!-- Agent cards injected here -->
           </div>
-          <div class="form-group">
-            <label for="api-token">API Token (Optional)</label>
-            <input type="password" id="api-token" placeholder="Enter your token">
-          </div>
-          <div class="form-group">
-             <label>Connection Status</label>
-             <div id="settings-status" class="status-text">Unknown</div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button id="save-settings" class="primary-btn">Save & Connect</button>
+
+          <button id="add-agent-btn" class="add-agent-btn" title="添加新 Agent">
+            +
+          </button>
         </div>
       </div>
     </div>
@@ -120,8 +179,8 @@
             <!-- Prompts injected here -->
           </div>
           <div class="add-prompt-form">
-             <input type="text" id="new-prompt-input" placeholder="New prompt...">
-             <button id="add-prompt-btn" class="icon-btn">+</button>
+            <input type="text" id="new-prompt-input" placeholder="New prompt...">
+            <button id="add-prompt-btn" class="icon-btn">+</button>
           </div>
         </div>
       </div>
@@ -129,4 +188,5 @@
   </div>
   <script src="sidebar.js"></script>
 </body>
+
 </html>
