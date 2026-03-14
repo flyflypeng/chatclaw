@@ -35,7 +35,6 @@
 -   `manifest.json`: Extension configuration (Manifest V3).
 -   `sidebar.html/js/css`: The main UI logic and styling.
 -   `background.js`: Service worker handling extension lifecycle.
--   `content.js`: Script injected into pages to extract context.
 
 ## License
 

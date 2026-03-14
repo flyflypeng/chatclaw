@@ -35,7 +35,6 @@
 -   `manifest.json`: 扩展配置文件 (Manifest V3)。
 -   `sidebar.html/js/css`: 主要的 UI 逻辑与样式。
 -   `background.js`: Service worker，处理扩展生命周期。
--   `content.js`: 注入页面的脚本，用于提取上下文信息。
 
 ## 许可证
 
