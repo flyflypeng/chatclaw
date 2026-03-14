@@ -13,6 +13,7 @@ _metadata/
 # Temporary/Dynamic Files
 *.tmp
 *.bak
+get-microclaw-token.js
 
 # Node (if added later)
 node_modules/

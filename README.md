@@ -1,41 +1,54 @@
-# MicroClaw Context Bridge
+<div align="center">
+  <img src="icons/chatclaw-icon.png" alt="ChatClaw Logo" width="128" />
+</div>
 
-**MicroClaw Context Bridge** is a Chrome extension that acts as a bridge between your browser and the [MicroClaw](https://github.com/microclaw/microclaw) AI Agent. It provides a modern sidebar interface for chatting with your local AI agent, sharing page context, and automating workflows.
+# ChatClaw Sidebar
 
-## Features
+**ChatClaw Sidebar** is a modern Chrome extension that acts as a bridge between your browser and your local AI Agent. It provides a persistent, seamless side panel interface for real-time chatting, context sharing, and intelligent workflow automation.
 
-- **Sidebar Interface**: A persistent side panel for seamless interaction with the agent.
-- **HTTP SSE Support**: Real-time streaming responses from the MicroClaw Agent using Server-Sent Events.
-- **Context Awareness**: One-click sharing of current page URL, title, and content.
-- **File Attachments**: Upload text-based files (code, logs, documents) for the agent to analyze.
-- **Prompt Library**: Save and manage frequently used prompts for quick access.
-- **Configurable**: Custom HTTP endpoint and API token support.
-- **Connection Status**: Real-time health check and status indicator.
+> [!NOTE]
+> This extension is designed to connect to a local WebSocket-based AI agent, such as MicroClaw. Ensure your local agent is running to fully utilize the sidebar's capabilities.
 
-## Installation
+## ✨ Features
 
-1.  Clone or download this repository.
-2.  Open Chrome and navigate to `chrome://extensions/`.
-3.  Enable **Developer mode** in the top right corner.
-4.  Click **Load unpacked** and select the directory of this project.
-5.  The MicroClaw icon should appear in your browser toolbar.
+- **Seamless Sidebar Interface**: A persistent side panel providing uninterrupted access to your AI agent while you browse.
+- **Real-time WebSocket Communication**: Low-latency, bidirectional streaming responses using the WebSocket protocol (default: `ws://127.0.0.1:10961/ws`).
+- **Multi-Agent Support**: Configure and seamlessly switch between multiple AI agents or models directly from the UI.
+- **Context Awareness**: One-click sharing of the current page's URL, title, and selected content to ground your agent's responses.
+- **File Analysis**: Attach text-based files (code, logs, documents) directly in the chat for the agent to analyze.
+- **Prompt Management**: Save, manage, and quickly reuse frequently used prompts.
+- **Real-time Connection Status**: Visual indicators to monitor the health and connectivity of your agent.
 
-## Usage
+## 🚀 Getting Started
 
-1.  **Start MicroClaw Agent**: Ensure your MicroClaw Agent is running (default: `http://localhost:18789`).
-2.  **Open Sidebar**: Click the extension icon in the Chrome toolbar to open the side panel.
-3.  **Configure**: If your agent runs on a different port or requires a token, click the **Settings** (gear icon) to configure.
-4.  **Chat**: Type your message and hit Enter.
-    -   Use the **Page Context** button to include the current tab's info.
-    -   Use the **Attach** button to send file contents.
-    -   Use the **Prompts** button to access saved commands.
+### Prerequisites
 
-## Development
+You need a compatible local AI agent running on your machine. By default, ChatClaw connects to `ws://127.0.0.1:10961/ws`.
 
--   `manifest.json`: Extension configuration (Manifest V3).
--   `sidebar.html/js/css`: The main UI logic and styling.
--   `background.js`: Service worker handling extension lifecycle.
+### Installation
 
-## License
+1. Clone or download this repository to your local machine.
+2. Open Google Chrome and navigate to `chrome://extensions/`.
+3. Enable **Developer mode** in the top right corner.
+4. Click **Load unpacked** and select the directory containing the extension files.
+5. The ChatClaw icon will appear in your browser toolbar. Pin it for easy access.
 
-MIT
+## 💡 Usage
+
+1. **Launch the Sidebar**: Click the ChatClaw extension icon in your Chrome toolbar to open the side panel.
+2. **Configure Connection**: Click the gear icon to open settings. Update the Gateway URL and API Token if your agent requires a custom configuration.
+3. **Manage Agents**: Add multiple agents in the settings and use the model selector in the chat header to switch contexts.
+4. **Interact**: 
+   - Type your message and press `Enter`.
+   - Use the **Page Context** button to inject your current tab's context.
+   - Use the **Attach** button to upload local files.
+   - Access the **Prompts** library for quick commands.
+
+## 🛠️ Architecture
+
+The extension is built using standard web technologies and Chrome Manifest V3:
+
+- `manifest.json`: Defines permissions (`sidePanel`, `activeTab`, `storage`) and extension configuration.
+- `background.js`: Service worker handling the extension lifecycle and side panel activation.
+- `sidebar.html` / `sidebar.js` / `sidebar.css`: The core application logic, UI, and state management for WebSocket connections and chat history.
+- `get-microclaw-token.js`: Helper script for authentication flows.
