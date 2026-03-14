@@ -1,0 +1,20 @@
+# System Files
+.DS_Store
+Thumbs.db
+
+# Chrome Extension Metadata
+_metadata/
+*.pem
+*.crx
+
+# Logs
+*.log
+
+# Temporary/Dynamic Files
+*.tmp
+*.bak
+
+# Node (if added later)
+node_modules/
+package-lock.json
+yarn.lock
