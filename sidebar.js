@@ -64,7 +64,10 @@ let state = {
   currentAgentId: null,
   activeSocket: null,
   reconnectTimer: null,
-  isTyping: false
+  isTyping: false,
+  optimizingPrompt: false,
+  optimizedPromptBuffer: '',
+  preferredProtocol: 'auto'
 };
 
 let pendingConnectRequestId = null;
@@ -91,6 +94,7 @@ const els = {
   promptsList: document.getElementById('prompts-list'),
   newPromptInput: document.getElementById('new-prompt-input'),
   addPromptBtn: document.getElementById('add-prompt-btn'),
+  optimizePromptBtn: document.getElementById('optimize-prompt-btn'),
   home: document.getElementById('home'),
   tipBanner: document.getElementById('tip-banner'),
   tipClose: document.getElementById('tip-close'),
@@ -111,6 +115,9 @@ const els = {
 async function init() {
   await loadSettings();
   setupEventListeners();
+
+  // Check for pending selection from content script
+  checkPendingSelection();
 
   // Connect to the current agent
   connectCurrentAgent();
@@ -160,6 +167,7 @@ function updateCurrentAgentState() {
     state.gatewayUrl = normalizeUrl(current.url);
     state.apiToken = current.token || '';
     state.showThought = !!current.showThought;
+    state.preferredProtocol = current.protocol || 'auto';
     if (els.currentModelName) els.currentModelName.textContent = current.name;
   }
 }
@@ -197,6 +205,15 @@ function setupEventListeners() {
 
   els.sendBtn.addEventListener('click', sendMessage);
 
+  // Listen for selection messages from background/content script
+  if (isExtensionEnv) {
+    chrome.runtime.onMessage.addListener((request) => {
+      if (request.action === 'sidebar_selection') {
+        appendSelectionToInput(request.selection);
+      }
+    });
+  }
+
   // Tools
   els.addUrlBtn.addEventListener('click', togglePageContext);
 
@@ -210,8 +227,13 @@ function setupEventListeners() {
     els.promptsBtn.addEventListener('click', openPrompts);
     els.closePromptsBtn.addEventListener('click', () => els.promptsModal.classList.add('hidden'));
     els.addPromptBtn.addEventListener('click', addPrompt);
+    els.optimizePromptBtn?.addEventListener('click', optimizePrompt);
     els.newPromptInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') addPrompt();
+      // Allow Shift+Enter for new line in textarea
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        addPrompt();
+      }
     });
 
     // Prompts List Delegation
@@ -365,12 +387,18 @@ function connectCurrentAgent() {
     ws.onopen = () => {
       console.log('WS Connected');
       updateConnectionStatus(true);
+
+      if (state.preferredProtocol === 'openclaw') {
+        sendConnectRequest();
+      }
       // Optional: Send handshake/auth if needed
       // ws.send(JSON.stringify({ type: 'hello', token: state.apiToken }));
     };
 
     ws.onclose = (e) => {
       console.log('WS Closed', e.code, e.reason);
+
+      const wasConnected = state.connected;
       updateConnectionStatus(false);
       state.activeSocket = null;
 
@@ -378,7 +406,7 @@ function connectCurrentAgent() {
       finalizeAgentResponse();
 
       // Auto-reconnect logic if it wasn't a deliberate close
-      if (state.connected && !state.reconnectTimer) {
+      if (wasConnected && !state.reconnectTimer) {
         state.reconnectTimer = setTimeout(() => {
           state.reconnectTimer = null;
           connectCurrentAgent();
@@ -445,6 +473,7 @@ function handleWebSocketMessage(dataStr) {
     } else if (data.type === 'event' && isChatEventName(data.event)) {
       handleChatEvent(data.event, data.payload);
     } else if (data.type === 'event' && data.event === 'connect.challenge') {
+      if (state.preferredProtocol === 'legacy') return;
       console.log('Responding to connect.challenge');
       sendConnectRequest();
     } else if (data.type === 'res' && (data.id === pendingConnectRequestId || data.id === 'connect') && !data.ok) {
@@ -639,6 +668,12 @@ function resetFinalizeTimeout() {
 }
 
 function appendAgentResponse(text) {
+  if (state.optimizingPrompt) {
+    state.optimizedPromptBuffer += text;
+    resetFinalizeTimeout();
+    return;
+  }
+
   if (!text) return;
   if (!currentStreamingContent && /^\s+$/.test(text)) return;
   if (!currentStreamingMessageId) {
@@ -669,6 +704,21 @@ function finalizeAgentResponse() {
   if (finalizeTimeout) {
     clearTimeout(finalizeTimeout);
     finalizeTimeout = null;
+  }
+
+  if (state.optimizingPrompt) {
+    // Done optimizing
+    if (state.optimizedPromptBuffer.trim()) {
+      els.newPromptInput.value = state.optimizedPromptBuffer.trim();
+    }
+    state.optimizingPrompt = false;
+    state.optimizedPromptBuffer = '';
+
+    if (els.optimizePromptBtn) {
+      els.optimizePromptBtn.disabled = false;
+      els.optimizePromptBtn.innerHTML = '<span>✨ Optimize</span>';
+    }
+    return;
   }
 
   if (currentStreamingMessageId) {
@@ -779,10 +829,10 @@ function renderModelMenu() {
 }
 
 function switchAgent(id) {
-  if (id === state.currentAgentId) {
-    els.modelMenu.classList.add('hidden');
-    return;
-  }
+  // if (id === state.currentAgentId) {
+  //   els.modelMenu.classList.add('hidden');
+  //   return;
+  // }
 
   state.currentAgentId = id;
   storage.set({ currentAgentId: id });
@@ -792,7 +842,7 @@ function switchAgent(id) {
   // Switch Context
   loadChatHistory();
 
-  // Reconnect
+  // Reconnect using the NEW configuration
   connectCurrentAgent();
 
   els.modelMenu.classList.add('hidden');
@@ -832,6 +882,15 @@ function renderAgentList() {
       </div>
 
       <div class="field-group">
+        <label class="field-label">Protocol</label>
+        <select class="field-input agent-protocol">
+          <option value="auto" ${(!agent.protocol || agent.protocol === 'auto') ? 'selected' : ''}>Auto-detect</option>
+          <option value="openclaw" ${agent.protocol === 'openclaw' ? 'selected' : ''}>OpenClaw</option>
+          <option value="legacy" ${agent.protocol === 'legacy' ? 'selected' : ''}>Legacy</option>
+        </select>
+      </div>
+
+      <div class="field-group">
         <label class="field-label">
           <input type="checkbox" class="agent-show-thought" ${agent.showThought ? 'checked' : ''}>
           显示模型思考过程（thought）
@@ -857,11 +916,13 @@ async function saveAgentFromCard(id, card) {
   const nameInput = card.querySelector('.agent-name');
   const urlInput = card.querySelector('.agent-url');
   const tokenInput = card.querySelector('.agent-token');
+  const protocolInput = card.querySelector('.agent-protocol');
   const showThoughtInput = card.querySelector('.agent-show-thought');
 
   const name = nameInput.value.trim();
   let url = urlInput.value.trim();
   const token = tokenInput.value.trim();
+  const protocol = protocolInput ? protocolInput.value : 'auto';
   const showThought = !!showThoughtInput?.checked;
 
   // URL Validation
@@ -895,23 +956,27 @@ async function saveAgentFromCard(id, card) {
 
   const agentIndex = state.agents.findIndex(a => a.id === id);
   if (agentIndex !== -1) {
-    state.agents[agentIndex] = { ...state.agents[agentIndex], name, url, token, showThought };
+    state.agents[agentIndex] = { ...state.agents[agentIndex], name, url, token, showThought, protocol };
     await storage.set({ agents: state.agents });
 
-    // Show feedback
+    // Show feedback for save action
     const statusEl = card.querySelector(`#status-${agentIndex !== -1 ? state.agents[agentIndex].id : id}`);
     if (statusEl) {
-      const originalText = statusEl.textContent;
-      statusEl.textContent = '已保存';
+      statusEl.textContent = '已保存配置';
+      statusEl.className = 'connection-status-text connected'; // Optional: Use green color or a neutral one
       setTimeout(() => {
-        statusEl.textContent = originalText;
+        // Clear message after 2s
+        if (statusEl.textContent === '已保存配置') {
+          statusEl.textContent = '';
+        }
       }, 2000);
     }
 
+    // NOTE: We do NOT auto-reconnect here anymore to prevent confusing UI states.
+    // The user must manually switch agents or restart the plugin to apply changes if it's the current agent.
     if (state.currentAgentId === id) {
       updateCurrentAgentState();
-      // If saving current agent, reconnect
-      connectCurrentAgent();
+      // Only update internal state, do NOT call connectCurrentAgent()
     }
   }
 }
@@ -923,25 +988,39 @@ async function connectAgentFromCard(id, card) {
 
   let url = card.querySelector('.agent-url').value.trim();
   const token = card.querySelector('.agent-token').value.trim();
+  const protocol = card.querySelector('.agent-protocol') ? card.querySelector('.agent-protocol').value : 'auto';
 
   // Temp normalize for test
   url = normalizeUrl(url);
 
-  const result = await testAgentConnection(url, token);
+  const result = await testAgentConnection(url, token, protocol);
 
   if (result.ok) {
     statusEl.textContent = '连接测试通过';
     statusEl.className = 'connection-status-text connected';
 
-    // Auto save on success
-    await saveAgentFromCard(id, card);
-
-    // Switch to this agent
-    if (state.currentAgentId !== id) {
-      switchAgent(id);
+    // Auto save on success but DO NOT show the "已保存配置" UI feedback 
+    // to avoid overriding the test result.
+    const agentIndex = state.agents.findIndex(a => a.id === id);
+    if (agentIndex !== -1) {
+      state.agents[agentIndex] = { ...state.agents[agentIndex], name: card.querySelector('.agent-name').value.trim(), url, token, showThought: !!card.querySelector('.agent-show-thought')?.checked, protocol };
+      await storage.set({ agents: state.agents });
+      if (state.currentAgentId === id) {
+        updateCurrentAgentState();
+      }
     }
 
-    renderAgentList();
+    // Note: We don't automatically switch agent or reconnect global socket here
+    // to avoid UI flicker. User can switch agent manually if desired.
+
+    // If we just tested a NEW agent (not current), renderAgentList will show updated list but not switch.
+    // NOTE: We only want to update the specific card's UI, not re-render the whole list, 
+    // to avoid resetting the DOM state (which causes the status message to disappear).
+    // The status message was just set on the DOM node directly above.
+
+    // Instead of renderAgentList(), we just update the card's internal state implicitly 
+    // via saveAgentFromCard and let the DOM manipulation above persist.
+
   } else {
     statusEl.textContent = `连接失败: ${result.error}`;
     statusEl.className = 'connection-status-text error';
@@ -970,7 +1049,7 @@ function deleteAgent(id) {
   renderAgentList();
 }
 
-function testAgentConnection(url, token) {
+function testAgentConnection(url, token, protocol = 'auto') {
   return new Promise((resolve) => {
     try {
       const ws = new WebSocket(url);
@@ -983,6 +1062,7 @@ function testAgentConnection(url, token) {
         resolved = true;
         clearTimeout(timeout);
         if (connectTimer) clearTimeout(connectTimer);
+        // Always close test connection
         try { ws.close(); } catch (_) { }
         resolve(result);
       };
@@ -992,6 +1072,18 @@ function testAgentConnection(url, token) {
       }, 5000);
 
       ws.onopen = () => {
+        if (protocol === 'openclaw') {
+          ws.send(JSON.stringify({
+            type: 'req',
+            id: connectRequestId,
+            method: 'connect',
+            params: {
+              minProtocol: PROTOCOL_VERSION,
+              maxProtocol: PROTOCOL_VERSION,
+              auth: { token: token || '' }
+            }
+          }));
+        }
         connectTimer = setTimeout(() => {
           settle({ ok: true });
         }, 800);
@@ -1039,33 +1131,62 @@ function testAgentConnection(url, token) {
 
 // --- Chat Logic ---
 
+async function checkPendingSelection() {
+  if (!isExtensionEnv) return;
+  const result = await chrome.storage.local.get('pendingSelection');
+  if (result.pendingSelection) {
+    appendSelectionToInput(result.pendingSelection);
+    chrome.storage.local.remove('pendingSelection');
+  }
+}
+
+function appendSelectionToInput(text) {
+  const formatted = `Selected Context: \n${text}\n\n---\n`;
+  els.userInput.value = els.userInput.value ? els.userInput.value + '\n' + formatted : formatted;
+  resizeTextarea();
+  updateSendButton();
+  els.userInput.focus();
+}
+
 async function togglePageContext() {
   if (state.pageContext) {
     state.pageContext = null;
     els.addUrlBtn.classList.remove('active');
-    els.addUrlBtn.title = "Add Page Context";
+    els.addUrlBtn.setAttribute('data-tooltip', "阅读此页");
+    els.addUrlBtn.removeAttribute('title');
   } else {
     try {
       const tabs = await tabsApi.query({ active: true, currentWindow: true });
       if (tabs[0]) {
-        // Try to get full context from content script
+        let title = tabs[0].title;
+        let url = tabs[0].url;
+
+        // Try to get full context from content script if available
         try {
           const response = await tabsApi.sendMessage(tabs[0].id, { type: 'collect-basic-context' });
           if (response && response.context) {
-            state.pageContext = response.context;
-          } else {
-            throw new Error('No context');
+            title = response.context.title || title;
+            url = response.context.url || url;
           }
         } catch (e) {
-          // Fallback to basic tab info (e.g. if content script not loaded)
-          state.pageContext = {
-            url: tabs[0].url,
-            title: tabs[0].title
-          };
+          // Content script might not be loaded, use tab info
         }
 
+        state.pageContext = { title, url };
+
+        const formattedContext = `Title: ${title}\nURL: ${url}\n\n---\n`;
+
+        // Append to input
+        els.userInput.value = els.userInput.value ? els.userInput.value + '\n' + formattedContext : formattedContext;
+
         els.addUrlBtn.classList.add('active');
-        els.addUrlBtn.title = `Context: ${state.pageContext.title.slice(0, 20)}...`;
+        els.addUrlBtn.setAttribute('data-tooltip', `已添加: ${title.slice(0, 15)}...`);
+        els.addUrlBtn.removeAttribute('title');
+
+        // Update UI
+        resizeTextarea();
+        updateSendButton();
+        els.userInput.focus();
       }
     } catch (err) {
       console.error('Failed to get tab info:', err);
@@ -1112,7 +1233,8 @@ async function sendMessage() {
     // Reset attachment
     state.attachment = null;
     els.attachBtn.classList.remove('active');
-    els.attachBtn.title = "Attach file";
+    els.attachBtn.setAttribute('data-tooltip', "附加文件");
+    els.attachBtn.removeAttribute('title');
   }
 
   // Send via WebSocket
@@ -1255,7 +1377,8 @@ async function handleFileSelect(e) {
       content: text.slice(0, 50000) // Limit size
     };
     els.attachBtn.classList.add('active');
-    els.attachBtn.title = `Attached: ${file.name}`;
+    els.attachBtn.setAttribute('data-tooltip', `已添加: ${file.name}`);
+    els.attachBtn.removeAttribute('title');
 
     // Auto-fill input if empty
     if (!els.userInput.value.trim()) {
@@ -1269,6 +1392,76 @@ async function handleFileSelect(e) {
 }
 
 // --- Prompts Logic ---
+
+async function optimizePrompt() {
+  const text = els.newPromptInput.value.trim();
+  if (!text) return;
+
+  if (!state.connected || !state.activeSocket) {
+    alert('Please verify your connection to use AI features.');
+    return;
+  }
+
+  state.optimizingPrompt = true;
+  state.optimizedPromptBuffer = '';
+
+  const originalBtnText = els.optimizePromptBtn ? els.optimizePromptBtn.innerHTML : '✨ Optimize';
+  if (els.optimizePromptBtn) {
+    els.optimizePromptBtn.disabled = true;
+    els.optimizePromptBtn.innerHTML = '<span>⏳ Optimizing...</span>';
+  }
+
+  const prompt = `Optimize the following user prompt for better LLM performance. Return ONLY the optimized prompt text without any explanation or markdown formatting:\n\n${text}`;
+
+  // Construct payload manually to avoid UI side effects of sendMessage
+  const payload = {
+    source: 'sidebar',
+    role: 'user',
+    message: prompt,
+    context: {}
+  };
+
+  try {
+    const sessionKey = getCurrentSessionKey();
+    const wsPayload = state.wsProtocol === 'openclaw'
+      ? {
+        type: 'req',
+        id: makeRequestId('chat'),
+        method: 'chat.send',
+        params: {
+          sessionKey,
+          message: prompt,
+          idempotencyKey: makeRequestId('idem')
+        }
+      }
+      : {
+        type: 'message',
+        payload: payload
+      };
+
+    state.activeSocket.send(JSON.stringify(wsPayload));
+
+    // Timeout safeguard
+    setTimeout(() => {
+      if (state.optimizingPrompt) {
+        state.optimizingPrompt = false;
+        if (els.optimizePromptBtn) {
+          els.optimizePromptBtn.disabled = false;
+          els.optimizePromptBtn.innerHTML = originalBtnText;
+        }
+      }
+    }, 30000);
+
+  } catch (err) {
+    console.error("Optimization failed", err);
+    state.optimizingPrompt = false;
+    if (els.optimizePromptBtn) {
+      els.optimizePromptBtn.disabled = false;
+      els.optimizePromptBtn.innerHTML = originalBtnText;
+    }
+    alert('Failed to send request');
+  }
+}
 
 async function openPrompts() {
   const res = await storage.get(['savedPrompts']);

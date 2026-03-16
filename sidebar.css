@@ -371,6 +371,49 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+/* Tooltip Styles */
+.mc-toolicon[data-tooltip]::before,
+.mc-toolicon[data-tooltip]::after {
+  position: absolute;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+  z-index: 9999;
+}
+
+.mc-toolicon[data-tooltip]::before {
+  content: '';
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  border: 5px solid transparent;
+  border-top-color: #0b1020;
+}
+
+.mc-toolicon[data-tooltip]::after {
+  content: attr(data-tooltip);
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background-color: #0b1020;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.mc-toolicon[data-tooltip]:hover::before,
+.mc-toolicon[data-tooltip]:hover::after {
+  visibility: visible;
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .mc-toolicon:hover {
@@ -769,18 +812,29 @@ body {
   color: var(--mc-red);
 }
 
-.add-prompt-form {
+.add-prompt-section {
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  border-top: 1px solid var(--mc-border);
+  padding-top: 10px;
 }
 
-.add-prompt-form input {
-  flex: 1;
-  border: 1px solid var(--mc-border);
-  border-radius: 14px;
-  padding: 10px 12px;
-  outline: none;
-  font-size: 13px;
+.prompt-actions {
+  display: flex;
+  gap: 8px;
+}
+
+textarea.field-input {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
+.add-prompt-form {
+  display: none;
+  /* Hide old form */
 }
 
 .message-bubble pre {
