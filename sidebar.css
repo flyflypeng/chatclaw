@@ -891,3 +891,55 @@ textarea.field-input {
   background: rgba(124, 58, 237, 0.08);
   border-color: rgba(124, 58, 237, 0.12);
 }
+
+/* Toggle Switch */
+.mc-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.mc-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.mc-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(11, 16, 32, 0.2);
+  transition: .3s;
+  border-radius: 24px;
+}
+
+.mc-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  transition: .3s;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.mc-switch input:checked+.mc-slider {
+  background-color: var(--mc-accent);
+}
+
+.mc-switch input:focus+.mc-slider {
+  box-shadow: 0 0 1px var(--mc-accent);
+}
+
+.mc-switch input:checked+.mc-slider:before {
+  transform: translateX(20px);
+}

@@ -1,13 +1,27 @@
 (() => {
   let floatBtn = null;
   let currentSelection = '';
+  let isEnabled = true;
+
+  // Initialize settings
+  chrome.storage.local.get(['enableFloatBtn'], (result) => {
+    isEnabled = result.enableFloatBtn !== false; // Default true
+  });
+
+  // Listen for setting changes
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.enableFloatBtn) {
+      isEnabled = changes.enableFloatBtn.newValue;
+      if (!isEnabled) hideButton();
+    }
+  });
 
   function createFloatButton() {
     if (floatBtn) return;
     floatBtn = document.createElement('button');
     floatBtn.className = 'chatclaw-float-btn';
     floatBtn.innerHTML = `
-      <img src="${chrome.runtime.getURL('icons/chatclaw-icon.png')}" alt="ChatClaw" width="20" height="20" />
+      <img src="${chrome.runtime.getURL('icons/chatclaw-icon.png')}" alt="ChatClaw" width="16" height="16" />
       <span>Ask ChatClaw</span>
     `;
     floatBtn.style.display = 'none';
@@ -22,7 +36,7 @@
 
   function handleBtnClick() {
     if (!currentSelection) return;
-    
+
     chrome.runtime.sendMessage({
       action: 'open_sidebar',
       selection: currentSelection
@@ -32,6 +46,7 @@
   }
 
   function showButton(x, y) {
+    if (!isEnabled) return;
     if (!floatBtn) createFloatButton();
     floatBtn.style.display = 'flex';
     floatBtn.style.top = `${y + 10}px`;
@@ -52,7 +67,7 @@
       currentSelection = text;
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
-      
+
       // Calculate position relative to viewport + scroll
       const x = rect.left + (rect.width / 2) + window.scrollX;
       const y = rect.bottom + window.scrollY;

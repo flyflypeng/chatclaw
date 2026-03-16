@@ -107,7 +107,8 @@ const els = {
   currentModelName: document.getElementById('current-model-name'),
   modelMenu: document.getElementById('model-menu'),
   agentList: document.getElementById('agent-list'),
-  addAgentBtn: document.getElementById('add-agent-btn')
+  addAgentBtn: document.getElementById('add-agent-btn'),
+  enableFloatBtn: document.getElementById('setting-enable-float-btn')
 };
 
 // --- Initialization ---
@@ -129,8 +130,13 @@ async function init() {
 }
 
 async function loadSettings() {
-  const result = await storage.get(['agents', 'currentAgentId', 'savedPrompts']);
+  const result = await storage.get(['agents', 'currentAgentId', 'savedPrompts', 'enableFloatBtn']);
   state.prompts = result.savedPrompts || [];
+
+  // Handle float button setting (default to true)
+  if (els.enableFloatBtn) {
+    els.enableFloatBtn.checked = result.enableFloatBtn !== false;
+  }
 
   // Initialize agents if empty
   if (!result.agents || result.agents.length === 0) {
@@ -329,6 +335,12 @@ function setupEventListeners() {
   els.closeSettingsBtn.addEventListener('click', () => {
     els.settingsModal.classList.add('hidden');
   });
+
+  if (els.enableFloatBtn) {
+    els.enableFloatBtn.addEventListener('change', (e) => {
+      storage.set({ enableFloatBtn: e.target.checked });
+    });
+  }
 
   // Agent Management
   els.addAgentBtn.addEventListener('click', () => {

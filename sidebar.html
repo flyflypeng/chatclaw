@@ -156,13 +156,30 @@
           <button id="close-settings" class="close-btn">&times;</button>
         </div>
         <div class="modal-body">
-          <div id="agent-list" class="agent-list-container">
-            <!-- Agent cards injected here -->
+          <div class="settings-section"
+            style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--mc-border);">
+            <h4 style="margin: 0 0 12px 0; font-size: 14px; color: var(--mc-text);">通用设置</h4>
+            <div class="field-group"
+              style="margin-bottom: 0; flex-direction: row; align-items: center; justify-content: space-between;">
+              <label class="field-label" style="font-size: 13px; color: var(--mc-text); font-weight: 500;">启用划线弹出提示框
+                (Ask ChatClaw)</label>
+              <label class="mc-switch">
+                <input type="checkbox" id="setting-enable-float-btn">
+                <span class="mc-slider"></span>
+              </label>
+            </div>
           </div>
 
-          <button id="add-agent-btn" class="add-agent-btn" title="添加新 Agent">
-            +
-          </button>
+          <div class="settings-section">
+            <h4 style="margin: 0 0 12px 0; font-size: 14px; color: var(--mc-text);">Agent 配置</h4>
+            <div id="agent-list" class="agent-list-container">
+              <!-- Agent cards injected here -->
+            </div>
+
+            <button id="add-agent-btn" class="add-agent-btn" title="添加新 Agent" style="margin-top: 16px;">
+              +
+            </button>
+          </div>
         </div>
       </div>
     </div>

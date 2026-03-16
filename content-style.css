@@ -3,8 +3,8 @@
   z-index: 2147483647; /* Max z-index */
   display: none; /* Hidden by default */
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 6px;
+  padding: 4px 8px;
   background: #ffffff;
   color: #0b1020;
   border: 1px solid rgba(0, 0, 0, 0.1);
@@ -12,7 +12,7 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   cursor: pointer;
   font-family: system-ui, -apple-system, sans-serif;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   transform: translateX(-50%);
   animation: chatclaw-pop-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
