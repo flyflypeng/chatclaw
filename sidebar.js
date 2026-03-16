@@ -67,7 +67,12 @@ let state = {
   isTyping: false,
   optimizingPrompt: false,
   optimizedPromptBuffer: '',
-  preferredProtocol: 'auto'
+  preferredProtocol: 'auto',
+  // New State
+  editingPromptId: null,
+  slashCommandActive: false,
+  slashCommandIndex: 0,
+  slashCommandQuery: ''
 };
 
 let pendingConnectRequestId = null;
@@ -85,16 +90,35 @@ const els = {
   gatewayInput: document.getElementById('gateway-url'),
   tokenInput: document.getElementById('api-token'),
   settingsStatus: document.getElementById('settings-status'),
+  // ... (keep existing)
   addUrlBtn: document.getElementById('add-url-btn'),
   attachBtn: document.getElementById('attach-btn'),
   fileInput: document.getElementById('file-input'),
   promptsBtn: document.getElementById('prompts-btn'),
   promptsModal: document.getElementById('prompts-modal'),
   closePromptsBtn: document.getElementById('close-prompts'),
+
+  // New Prompt Elements
   promptsList: document.getElementById('prompts-list'),
-  newPromptInput: document.getElementById('new-prompt-input'),
-  addPromptBtn: document.getElementById('add-prompt-btn'),
-  optimizePromptBtn: document.getElementById('optimize-prompt-btn'),
+  promptsListView: document.getElementById('prompts-list-view'), // New wrapper
+  promptSearch: document.getElementById('prompt-search'),
+  createPromptBtn: document.getElementById('create-prompt-btn'),
+  promptEditor: document.getElementById('prompt-editor'),
+  // editorEmptyState removed
+  backToListBtn: document.getElementById('back-to-list-btn'), // New Back Button
+  editorTitle: document.getElementById('editor-title'),
+  editPromptName: document.getElementById('edit-prompt-name'),
+  editPromptContent: document.getElementById('edit-prompt-content'),
+  editPromptIconDisplay: document.getElementById('edit-prompt-icon-display'),
+  changeIconBtn: document.getElementById('change-icon-btn'),
+  emojiPicker: document.getElementById('emoji-picker'),
+  emojiSearch: document.getElementById('emoji-search'),
+  emojiGrid: document.getElementById('emoji-grid'),
+  cancelPromptBtn: document.getElementById('cancel-prompt-btn'),
+  savePromptBtn: document.getElementById('save-prompt-btn'),
+
+  slashPopup: document.getElementById('slash-popup'),
+
   home: document.getElementById('home'),
   tipBanner: document.getElementById('tip-banner'),
   tipClose: document.getElementById('tip-close'),
@@ -132,6 +156,17 @@ async function init() {
 async function loadSettings() {
   const result = await storage.get(['agents', 'currentAgentId', 'savedPrompts', 'enableFloatBtn']);
   state.prompts = result.savedPrompts || [];
+
+  // Migration: Convert strings to objects
+  if (state.prompts.length > 0 && typeof state.prompts[0] === 'string') {
+    state.prompts = state.prompts.map(p => ({
+      id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
+      name: p.length > 15 ? p.slice(0, 15) + '...' : p,
+      content: p,
+      icon: '💡'
+    }));
+    await storage.set({ savedPrompts: state.prompts });
+  }
 
   // Handle float button setting (default to true)
   if (els.enableFloatBtn) {
@@ -200,9 +235,14 @@ function setupEventListeners() {
   els.userInput.addEventListener('input', () => {
     resizeTextarea();
     updateSendButton();
+    handleSlashCommandInput();
   });
 
   els.userInput.addEventListener('keydown', (e) => {
+    if (state.slashCommandActive) {
+      handleSlashCommandKeydown(e);
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
@@ -228,32 +268,68 @@ function setupEventListeners() {
     els.fileInput.addEventListener('change', handleFileSelect);
   }
 
-  // Prompts
+  // Prompts Management
   if (els.promptsBtn) {
     els.promptsBtn.addEventListener('click', openPrompts);
     els.closePromptsBtn.addEventListener('click', () => els.promptsModal.classList.add('hidden'));
-    els.addPromptBtn.addEventListener('click', addPrompt);
-    els.optimizePromptBtn?.addEventListener('click', optimizePrompt);
-    els.newPromptInput.addEventListener('keydown', (e) => {
-      // Allow Shift+Enter for new line in textarea
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        addPrompt();
+
+    els.createPromptBtn?.addEventListener('click', createPrompt);
+
+    els.promptSearch?.addEventListener('input', (e) => {
+      renderPrompts(e.target.value);
+    });
+
+    els.changeIconBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleEmojiPicker();
+    });
+
+    els.emojiSearch?.addEventListener('input', (e) => {
+      renderEmojiGrid(e.target.value);
+    });
+
+    els.cancelPromptBtn?.addEventListener('click', () => {
+      closeEditor();
+    });
+
+    els.backToListBtn?.addEventListener('click', () => {
+      closeEditor();
+    });
+
+    els.savePromptBtn?.addEventListener('click', savePrompt);
+
+    // Click outside to close emoji picker
+    document.addEventListener('click', (e) => {
+      if (els.emojiPicker && !els.emojiPicker.classList.contains('hidden')) {
+        if (!e.target.closest('.icon-selector')) {
+          els.emojiPicker.classList.add('hidden');
+        }
+      }
+
+      // Close slash popup if clicked outside
+      if (state.slashCommandActive && !e.target.closest('#slash-popup') && !e.target.closest('#user-input')) {
+        closeSlashPopup();
       }
     });
 
-    // Prompts List Delegation
+    // Prompts List Delegation (Select, Delete, Drag)
     els.promptsList.addEventListener('click', (e) => {
       const item = e.target.closest('.prompt-item');
       if (!item) return;
       const index = parseInt(item.dataset.index);
 
-      if (e.target.closest('[data-action="delete-prompt"]')) {
+      if (e.target.closest('.delete-prompt-btn')) {
         deletePrompt(e, index);
       } else {
-        selectPrompt(index);
+        editPrompt(index);
       }
     });
+
+    // Drag and Drop Events
+    els.promptsList.addEventListener('dragstart', handleDragStart);
+    els.promptsList.addEventListener('dragover', handleDragOver);
+    els.promptsList.addEventListener('drop', handleDrop);
+    els.promptsList.addEventListener('dragend', handleDragEnd);
   }
 
   if (els.tipClose) {
@@ -1405,124 +1481,409 @@ async function handleFileSelect(e) {
 
 // --- Prompts Logic ---
 
-async function optimizePrompt() {
-  const text = els.newPromptInput.value.trim();
-  if (!text) return;
-
-  if (!state.connected || !state.activeSocket) {
-    alert('Please verify your connection to use AI features.');
-    return;
-  }
-
-  state.optimizingPrompt = true;
-  state.optimizedPromptBuffer = '';
-
-  const originalBtnText = els.optimizePromptBtn ? els.optimizePromptBtn.innerHTML : '✨ Optimize';
-  if (els.optimizePromptBtn) {
-    els.optimizePromptBtn.disabled = true;
-    els.optimizePromptBtn.innerHTML = '<span>⏳ Optimizing...</span>';
-  }
-
-  const prompt = `Optimize the following user prompt for better LLM performance. Return ONLY the optimized prompt text without any explanation or markdown formatting:\n\n${text}`;
-
-  // Construct payload manually to avoid UI side effects of sendMessage
-  const payload = {
-    source: 'sidebar',
-    role: 'user',
-    message: prompt,
-    context: {}
-  };
-
-  try {
-    const sessionKey = getCurrentSessionKey();
-    const wsPayload = state.wsProtocol === 'openclaw'
-      ? {
-        type: 'req',
-        id: makeRequestId('chat'),
-        method: 'chat.send',
-        params: {
-          sessionKey,
-          message: prompt,
-          idempotencyKey: makeRequestId('idem')
-        }
-      }
-      : {
-        type: 'message',
-        payload: payload
-      };
-
-    state.activeSocket.send(JSON.stringify(wsPayload));
-
-    // Timeout safeguard
-    setTimeout(() => {
-      if (state.optimizingPrompt) {
-        state.optimizingPrompt = false;
-        if (els.optimizePromptBtn) {
-          els.optimizePromptBtn.disabled = false;
-          els.optimizePromptBtn.innerHTML = originalBtnText;
-        }
-      }
-    }, 30000);
-
-  } catch (err) {
-    console.error("Optimization failed", err);
-    state.optimizingPrompt = false;
-    if (els.optimizePromptBtn) {
-      els.optimizePromptBtn.disabled = false;
-      els.optimizePromptBtn.innerHTML = originalBtnText;
-    }
-    alert('Failed to send request');
-  }
-}
+const COMMON_EMOJIS = [
+  '💡', '📝', '✨', '🔍', '🚀', '💻', '🎨', '📊', '📅', '📧',
+  '🤖', '📚', '🧠', '⚙️', '🔧', '🔨', '🎉', '🔥', '⭐', '❤️',
+  '👍', '👎', '✅', '❌', '❓', '❗', '⚠️', '🌐', '🔗', '🔒',
+  '🔓', '🔑', '🛒', '💰', '💳', '💵', '💶', '💷', '💴', '🏠',
+  '🏢', '🏥', '🏦', '🏨', '🏫', '🎓', '🎤', '🎧', '🎵', '🎹'
+];
 
 async function openPrompts() {
   const res = await storage.get(['savedPrompts']);
   state.prompts = res.savedPrompts || [];
+
+  // Reset UI
+  els.promptSearch.value = '';
+  els.promptEditor.classList.add('hidden');
+  els.promptsListView.classList.remove('hidden'); // Show list view
+  state.editingPromptId = null;
+
   renderPrompts();
   els.promptsModal.classList.remove('hidden');
 }
 
-function renderPrompts() {
-  els.promptsList.innerHTML = state.prompts.map((p, i) => `
-    <div class="prompt-item" data-index="${i}">
-      <span class="prompt-text">${escapeHtml(p)}</span>
-      <span class="delete-prompt-btn" data-action="delete-prompt">&times;</span>
-    </div>
-  `).join('');
+function renderPrompts(filterText = '') {
+  const list = els.promptsList;
+  list.innerHTML = '';
+
+  const filtered = state.prompts.filter(p => {
+    if (!filterText) return true;
+    const q = filterText.toLowerCase();
+    return p.name.toLowerCase().includes(q) || p.content.toLowerCase().includes(q);
+  });
+
+  if (filtered.length === 0) {
+    list.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--mc-text-3);">没有找到提示词</div>';
+    return;
+  }
+
+  filtered.forEach((p, i) => {
+    const isEditing = state.editingPromptId === p.id;
+    const el = document.createElement('div');
+    el.className = `prompt-item ${isEditing ? 'active' : ''}`;
+    el.draggable = true;
+    el.dataset.index = i; // Note: Index in filtered list might differ from state.prompts if filtered. 
+    // Ideally we should use ID for operations, but for drag-drop we need index in current view.
+    // If filtering is active, disable drag-drop or handle carefully.
+    // For simplicity, we only enable drag-drop when not filtering.
+    if (filterText) el.draggable = false;
+    el.dataset.id = p.id;
+
+    el.innerHTML = `
+      <div class="drag-handle" title="拖动排序">⋮⋮</div>
+      <div class="prompt-icon">${p.icon || '💡'}</div>
+      <div class="prompt-info">
+        <div class="prompt-name">${escapeHtml(p.name)}</div>
+        <div class="prompt-preview">${escapeHtml(p.content)}</div>
+      </div>
+      <div class="prompt-item-actions">
+        <span class="delete-prompt-btn" title="删除">&times;</span>
+      </div>
+    `;
+    list.appendChild(el);
+  });
 }
 
-async function addPrompt() {
-  const text = els.newPromptInput.value.trim();
-  if (!text) return;
+function createPrompt() {
+  state.editingPromptId = 'new-' + Date.now();
 
-  state.prompts.push(text);
+  // Clear form
+  els.editorTitle.textContent = '新建提示词';
+  els.editPromptName.value = '';
+  els.editPromptContent.value = '';
+  els.editPromptIconDisplay.textContent = '💡';
+
+  // Clear errors
+  els.editPromptName.classList.remove('error');
+  els.editPromptContent.classList.remove('error');
+
+  // Slide in editor
+  els.promptEditor.classList.remove('hidden');
+
+  // Force reflow to ensure transition plays
+  void els.promptEditor.offsetWidth;
+
+  els.promptEditor.classList.add('active');
+
+  // Accessibility: Trap focus in editor
+  if (els.promptsListView) els.promptsListView.inert = true;
+
+  els.editPromptName.focus();
+}
+
+function editPrompt(index) {
+  // If we are filtering, the index matches the filtered list. 
+  // We need to find the real item.
+  // Actually, we stored dataset.id on the element.
+  const id = els.promptsList.children[index]?.dataset.id;
+  if (!id) return;
+
+  const prompt = state.prompts.find(p => p.id === id);
+  if (!prompt) return;
+
+  state.editingPromptId = id;
+
+  els.editorTitle.textContent = '编辑提示词';
+  els.editPromptName.value = prompt.name;
+  els.editPromptContent.value = prompt.content;
+  els.editPromptIconDisplay.textContent = prompt.icon || '💡';
+
+  // Clear errors
+  els.editPromptName.classList.remove('error');
+  els.editPromptContent.classList.remove('error');
+
+  // Slide in editor
+  els.promptEditor.classList.remove('hidden');
+
+  // Force reflow
+  void els.promptEditor.offsetWidth;
+
+  els.promptEditor.classList.add('active');
+
+  // Accessibility: Trap focus in editor
+  if (els.promptsListView) els.promptsListView.inert = true;
+}
+
+function closeEditor() {
+  els.promptEditor.classList.remove('active');
+
+  // Accessibility: Restore focus to list
+  if (els.promptsListView) els.promptsListView.inert = false;
+
+  // Wait for transition to finish before hiding (300ms matches CSS)
+  setTimeout(() => {
+    els.promptEditor.classList.add('hidden');
+    // Ensure list is visible (though we never hid it in this new logic, keeping for safety)
+    els.promptsListView.classList.remove('hidden');
+  }, 300);
+
+  state.editingPromptId = null;
+}
+
+async function savePrompt() {
+  const nameInput = els.editPromptName;
+  const contentInput = els.editPromptContent;
+  const name = nameInput.value.trim();
+  const content = contentInput.value.trim();
+  const icon = els.editPromptIconDisplay.textContent;
+
+  let hasError = false;
+  if (!name) {
+    nameInput.classList.add('error');
+    hasError = true;
+  } else {
+    nameInput.classList.remove('error');
+  }
+
+  if (!content) {
+    contentInput.classList.add('error');
+    hasError = true;
+  } else {
+    contentInput.classList.remove('error');
+  }
+
+  if (hasError) return;
+
+  const newPrompt = {
+    id: state.editingPromptId.startsWith('new-') ? (Date.now() + '-' + Math.random().toString(36).substr(2, 9)) : state.editingPromptId,
+    name,
+    content,
+    icon
+  };
+
+  if (state.editingPromptId.startsWith('new-')) {
+    state.prompts.push(newPrompt);
+  } else {
+    const idx = state.prompts.findIndex(p => p.id === state.editingPromptId);
+    if (idx !== -1) {
+      state.prompts[idx] = newPrompt;
+    }
+  }
+
   await storage.set({ savedPrompts: state.prompts });
 
-  els.newPromptInput.value = '';
-  renderPrompts();
+  closeEditor();
+
+  renderPrompts(els.promptSearch.value);
 }
 
 async function deletePrompt(e, index) {
   e.stopPropagation();
-  state.prompts.splice(index, 1);
+  if (!confirm('确定要删除这个提示词吗？')) return;
+
+  const id = els.promptsList.children[index]?.dataset.id;
+  if (!id) return;
+
+  state.prompts = state.prompts.filter(p => p.id !== id);
   await storage.set({ savedPrompts: state.prompts });
-  renderPrompts();
+
+  if (state.editingPromptId === id) {
+    closeEditor();
+  }
+
+  renderPrompts(els.promptSearch.value);
 }
 
-function selectPrompt(index) {
-  const text = state.prompts[index];
-  if (text) {
-    els.userInput.value = text;
+// --- Drag and Drop ---
+let draggedItemIndex = null;
+
+function handleDragStart(e) {
+  const item = e.target.closest('.prompt-item');
+  if (!item || els.promptSearch.value) { // Disable drag if filtering
+    e.preventDefault();
+    return;
+  }
+  draggedItemIndex = parseInt(item.dataset.index);
+  e.dataTransfer.effectAllowed = 'move';
+  item.classList.add('dragging');
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+
+  const item = e.target.closest('.prompt-item');
+  if (!item) return;
+
+  const list = els.promptsList;
+  const items = [...list.querySelectorAll('.prompt-item')];
+  const overIndex = items.indexOf(item);
+
+  if (overIndex !== draggedItemIndex) {
+    // Visual feedback could be added here (placeholder)
+  }
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  const item = e.target.closest('.prompt-item');
+  if (!item) return;
+
+  const fromIndex = draggedItemIndex;
+  const toIndex = parseInt(item.dataset.index);
+
+  if (fromIndex !== null && fromIndex !== toIndex) {
+    // Move in array
+    const movedItem = state.prompts.splice(fromIndex, 1)[0];
+    state.prompts.splice(toIndex, 0, movedItem);
+
+    // Save
+    storage.set({ savedPrompts: state.prompts });
+    renderPrompts();
+  }
+}
+
+function handleDragEnd(e) {
+  const item = e.target.closest('.prompt-item');
+  if (item) item.classList.remove('dragging');
+  draggedItemIndex = null;
+}
+
+// --- Emoji Picker ---
+
+function toggleEmojiPicker() {
+  if (els.emojiPicker.classList.contains('hidden')) {
+    renderEmojiGrid();
+    els.emojiPicker.classList.remove('hidden');
+    els.emojiSearch.value = '';
+    els.emojiSearch.focus();
+  } else {
+    els.emojiPicker.classList.add('hidden');
+  }
+}
+
+function renderEmojiGrid(filter = '') {
+  const grid = els.emojiGrid;
+  grid.innerHTML = '';
+
+  const filtered = COMMON_EMOJIS.filter(e => !filter || e.includes(filter)); // Simple filter, emojis usually don't have text names in this list. 
+  // Ideally we map emojis to keywords. For now, show all if no filter or just matching emojis.
+
+  filtered.forEach(emoji => {
+    const div = document.createElement('div');
+    div.className = 'emoji-item';
+    div.textContent = emoji;
+    div.onclick = (e) => {
+      e.stopPropagation();
+      els.editPromptIconDisplay.textContent = emoji;
+      els.emojiPicker.classList.add('hidden');
+    };
+    grid.appendChild(div);
+  });
+}
+
+// --- Slash Command ---
+
+function handleSlashCommandInput() {
+  const val = els.userInput.value;
+
+  // Check if we just typed "/" at start or after newline
+  // For simplicity, let's just support "/" at start for now, or use a regex
+  // Regex: /(?:^|\n)\/(\S*)$/
+  const match = /(?:^|\n)\/([^ \n]*)$/.exec(val);
+
+  if (match) {
+    const query = match[1];
+    state.slashCommandActive = true;
+    state.slashCommandQuery = query;
+    renderSlashPopup(query);
+  } else {
+    closeSlashPopup();
+  }
+}
+
+function renderSlashPopup(query) {
+  const popup = els.slashPopup;
+  const q = query.toLowerCase();
+
+  const matches = state.prompts.filter(p =>
+    p.name.toLowerCase().includes(q) ||
+    p.content.toLowerCase().includes(q)
+  );
+
+  if (matches.length === 0) {
+    closeSlashPopup();
+    return;
+  }
+
+  popup.innerHTML = matches.map((p, i) => `
+    <div class="slash-item ${i === 0 ? 'active' : ''}" data-index="${i}" data-id="${p.id}">
+      <div class="slash-item-icon">${p.icon}</div>
+      <div class="slash-item-name">${escapeHtml(p.name)}</div>
+      <div class="slash-item-preview">${escapeHtml(p.content)}</div>
+    </div>
+  `).join('');
+
+  state.slashCommandIndex = 0;
+  popup.classList.remove('hidden');
+
+  // Position popup? It is absolute bottom 80px, fixed for now.
+}
+
+function closeSlashPopup() {
+  state.slashCommandActive = false;
+  els.slashPopup.classList.add('hidden');
+}
+
+function handleSlashCommandKeydown(e) {
+  const popup = els.slashPopup;
+  if (popup.classList.contains('hidden')) return;
+
+  const items = popup.querySelectorAll('.slash-item');
+  if (items.length === 0) return;
+
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    state.slashCommandIndex = (state.slashCommandIndex - 1 + items.length) % items.length;
+    updateSlashSelection(items);
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    state.slashCommandIndex = (state.slashCommandIndex + 1) % items.length;
+    updateSlashSelection(items);
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    const selected = items[state.slashCommandIndex];
+    if (selected) {
+      applySlashCommand(selected.dataset.id);
+    }
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeSlashPopup();
+  }
+}
+
+function updateSlashSelection(items) {
+  items.forEach((item, i) => {
+    if (i === state.slashCommandIndex) item.classList.add('active');
+    else item.classList.remove('active');
+  });
+}
+
+function applySlashCommand(id) {
+  const prompt = state.prompts.find(p => p.id === id);
+  if (!prompt) return;
+
+  // Replace the slash command with prompt content
+  const val = els.userInput.value;
+  const match = /(?:^|\n)\/([^ \n]*)$/.exec(val);
+
+  if (match) {
+    const prefix = val.slice(0, match.index);
+    // If matched at newline, preserve newline
+    const separator = match.index === 0 ? '' : '\n';
+    els.userInput.value = prefix + separator + prompt.content;
+
+    closeSlashPopup();
     resizeTextarea();
     updateSendButton();
-    els.promptsModal.classList.add('hidden');
     els.userInput.focus();
   }
 }
 
 // Expose to global scope for HTML onclick
-window.selectPrompt = selectPrompt;
-window.deletePrompt = deletePrompt;
+// window.selectPrompt = selectPrompt; 
+// window.deletePrompt = deletePrompt;
 
 // Start
 // Use DOMContentLoaded to ensure elements are ready
