@@ -1229,7 +1229,7 @@ async function checkPendingSelection() {
 }
 
 function appendSelectionToInput(text) {
-  const formatted = `Selected Context: \n${text}\n\n---\n`;
+  const formatted = `划线选中内容: \n${text}\n---\n`;
   els.userInput.value = els.userInput.value ? els.userInput.value + '\n' + formatted : formatted;
   resizeTextarea();
   updateSendButton();
@@ -1262,7 +1262,7 @@ async function togglePageContext() {
 
         state.pageContext = { title, url };
 
-        const formattedContext = `Title: ${title}\nURL: ${url}\n\n---\n`;
+        const formattedContext = `网页标题: ${title}\nURL链接: ${url}\n---\n`;
 
         // Append to input
         els.userInput.value = els.userInput.value ? els.userInput.value + '\n' + formattedContext : formattedContext;
@@ -1815,6 +1815,20 @@ function renderSlashPopup(query) {
     </div>
   `).join('');
 
+  // Add click listeners
+  const items = popup.querySelectorAll('.slash-item');
+  items.forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      applySlashCommand(item.dataset.id);
+    });
+    // Optional: update selection on hover
+    item.addEventListener('mouseenter', () => {
+      state.slashCommandIndex = parseInt(item.dataset.index);
+      updateSlashSelection(items);
+    });
+  });
+
   state.slashCommandIndex = 0;
   popup.classList.remove('hidden');
 
@@ -1861,7 +1875,7 @@ function updateSlashSelection(items) {
 }
 
 function applySlashCommand(id) {
-  const prompt = state.prompts.find(p => p.id === id);
+  const prompt = state.prompts.find(p => String(p.id) === String(id));
   if (!prompt) return;
 
   // Replace the slash command with prompt content
