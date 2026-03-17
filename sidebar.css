@@ -1480,3 +1480,43 @@ textarea.field-input {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Typing Indicator */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 0;
+  height: 24px;
+  /* Fix height to prevent layout shift */
+}
+
+.typing-indicator span {
+  width: 4px;
+  height: 4px;
+  background-color: var(--mc-text-2);
+  border-radius: 50%;
+  animation: typing-bounce 1.4s infinite ease-in-out both;
+}
+
+.typing-indicator span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes typing-bounce {
+
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+  }
+
+  40% {
+    transform: translateY(-6px);
+  }
+}

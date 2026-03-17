@@ -775,7 +775,7 @@ function appendAgentResponse(text) {
   const bubble = msgEl.querySelector('.message-bubble');
 
   // Remove typing indicator if present
-  const typingDots = bubble.querySelector('.typing-dots');
+  const typingDots = bubble.querySelector('.typing-indicator');
   if (typingDots) {
     bubble.innerHTML = '';
   }
@@ -1352,7 +1352,7 @@ async function sendMessage() {
     const agentMsgId = renderMessageToUI('agent', '');
     currentStreamingMessageId = agentMsgId;
     const agentBubble = document.getElementById(agentMsgId).querySelector('.message-bubble');
-    agentBubble.innerHTML = '<span class="typing-dots">...</span>';
+    agentBubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
 
   } catch (err) {
     console.error("Send failed", err);
