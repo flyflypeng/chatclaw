@@ -34,8 +34,8 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content-script.js"],
-      "css": ["content-style.css"],
-      "run_at": "document_end"
+      "run_at": "document_end",
+      "all_frames": true
     }
   ],
   "icons": {
