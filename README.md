@@ -2,12 +2,12 @@
   <img src="icons/chatclaw-icon.png" alt="ChatClaw Logo" width="128" />
 </div>
 
-# ChatClaw Sidebar
+# ChatClaw Chrome 扩展插件
 
-**ChatClaw Sidebar** 是一款现代化的 Chrome 浏览器扩展，作为浏览器与本地 AI Agent 之间的桥梁。它提供了一个持久化的侧边栏界面，让你可以进行实时对话、分享网页上下文并实现智能化的工作流自动化。
+**ChatClaw** 是一款现代化的 Chrome 浏览器扩展，作为浏览器与AI Agent 之间的桥梁。它提供了一个持久化的侧边栏界面，让你可以进行实时对话、分享网页上下文并实现智能化的工作流自动化。
 
 > [!NOTE]
-> 此扩展专为连接本地基于 WebSocket 的 AI Agent（如 MicroClaw）而设计。请确保您的本地 Agent 服务已启动，以充分利用侧边栏的功能。
+> 此扩展专为连接基于 WebSocket 的 AI Agent（如 [MicroClaw](https://github.com/microclaw/microclaw), [OpenClaw](https://github.com/openclaw/openclaw)）而设计。请确保您的 Agent 服务已启动，以充分利用该插件的功能。
 
 ## ✨ 功能特性
 
