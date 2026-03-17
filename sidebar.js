@@ -1403,10 +1403,35 @@ function renderMessageToUI(role, content, timestamp, shouldScroll = true) {
   return id;
 }
 
-function renderMarkdown(element, text) {
-  // Simple markdown renderer: handles code blocks and basic formatting
-  // For production, use a library like marked.js
+function isMarkdown(text) {
+  if (!text) return false;
+  const hasCodeBlock = /```/.test(text);
+  const hasHeader = /^#{1,6}\s+.+/m.test(text);
+  const hasList = /^\s*[-*+]\s+.+/m.test(text) || /^\s*\d+\.\s+.+/m.test(text);
+  const hasQuote = /^\s*>.+/m.test(text);
+  const hasLink = /\[.+?\]\(.+?\)/.test(text);
+  const hasBold = /\*\*(.*?)\*\*/.test(text);
 
+  return hasCodeBlock || hasHeader || hasList || hasQuote || hasLink || hasBold;
+}
+
+function renderMarkdown(element, text) {
+  if (!text) {
+    element.innerHTML = '';
+    return;
+  }
+
+  // Preprocess text to prevent tags like #PARA/Resource from being treated as headers
+  // Replaces # followed by non-space characters with its HTML entity &#35;
+  let processedText = text.replace(/(^|\s)#([^\s#]+)/g, '$1&#35;$2');
+
+  // If text contains Markdown syntax and marked is loaded, use it
+  if (isMarkdown(text) && typeof marked !== 'undefined') {
+    element.innerHTML = marked.parse(processedText);
+    return;
+  }
+
+  // Fallback to simple default rendering for plain text
   let html = escapeHtml(text);
 
   // Bold

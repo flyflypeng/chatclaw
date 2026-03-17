@@ -861,6 +861,83 @@ textarea.field-input {
   text-decoration: underline;
 }
 
+/* Markdown specific styles */
+.message-bubble p {
+  margin: 0 0 10px 0;
+}
+
+.message-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.message-bubble h1,
+.message-bubble h2,
+.message-bubble h3,
+.message-bubble h4,
+.message-bubble h5,
+.message-bubble h6 {
+  margin: 16px 0 8px 0;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--mc-text);
+}
+
+.message-bubble h1 {
+  font-size: 1.5em;
+}
+
+.message-bubble h2 {
+  font-size: 1.3em;
+}
+
+.message-bubble h3 {
+  font-size: 1.1em;
+}
+
+.message-bubble ul,
+.message-bubble ol {
+  margin: 0 0 10px 0;
+  padding-left: 20px;
+}
+
+.message-bubble li {
+  margin-bottom: 4px;
+}
+
+.message-bubble blockquote {
+  margin: 10px 0;
+  padding: 8px 14px;
+  color: var(--mc-text-2);
+  border-left: 4px solid var(--mc-border);
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 4px;
+}
+
+.message-bubble table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+}
+
+.message-bubble th,
+.message-bubble td {
+  border: 1px solid var(--mc-border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.message-bubble th {
+  background: rgba(0, 0, 0, 0.03);
+  font-weight: 600;
+}
+
+.message-bubble :not(pre)>code {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: var(--mc-text);
+}
+
 .mc-menu {
   position: absolute;
   top: 58px;
