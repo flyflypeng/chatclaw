@@ -50,26 +50,28 @@
           <h1 class="mc-hero-title">你好，</h1>
           <p class="mc-hero-subtitle">我今天能帮你什么？</p>
           <div class="mc-hero-pills" role="list">
-            <button class="mc-pill" type="button" data-fill="input" data-text="总结当前网页" role="listitem">总结网页</button>
-            <button class="mc-pill" type="button" data-fill="input" data-text="提取要点并生成TODO"
-              role="listitem">提取要点</button>
-            <button class="mc-pill" type="button" data-fill="input" data-text="把下面内容改写成更专业的邮件"
-              role="listitem">写邮件</button>
-            <button class="mc-pill" type="button" data-fill="input" data-text="Deep Research：围绕这个主题做深入调研"
-              role="listitem">Deep Research</button>
+            <button class="mc-pill" type="button" data-fill="input" data-text="请根据 OmniTag 技能的标签规则，为当前网页/划线内容推荐合适的分类标签。"
+              role="listitem">标签推荐</button>
+            <button class="mc-pill" type="button" data-fill="input" data-text="请阅读当前网页内容，提取核心观点，并生成结构化的思维导图大纲。"
+              role="listitem">网页总结</button>
+            <button class="mc-pill" type="button" data-fill="input"
+              data-text="将当前网页或划线内容解析为 Markdown 格式，提取摘要和关键元数据，准备入库。" role="listitem">入库整理</button>
+            <button class="mc-pill" type="button" data-fill="input" data-text="基于当前网页的上下文，帮我深入调研相关背景信息，并提供一份综合的分析简报。"
+              role="listitem">深度调研</button>
           </div>
-          <button class="mc-onboarding" type="button">
+          <a class="mc-onboarding"
+            href="https://github.com/flyflypeng/chatclaw?tab=readme-ov-file#-%E4%BD%BF%E7%94%A8%E6%8C%87%E5%8D%97"
+            target="_blank" rel="noopener noreferrer">
             <span class="mc-onboarding-icon">🌿</span>
             新手指南
             <span class="mc-onboarding-arrow">→</span>
-          </button>
+          </a>
         </div>
 
         <div id="tip-banner" class="mc-tip" role="note">
           <div class="mc-tip-icon">💡</div>
           <div class="mc-tip-text">
-            每次打开 MicroClaw 时，都会开始一个新的聊天。要继续上次的聊天，请调整
-            <button id="tip-settings-link" class="mc-link" type="button">设置</button>。
+            每次打开 ChatClaw 时，默认复用上次的聊天会话。要新创建聊天会话，请点击下方 ➕ 按钮
           </div>
           <button id="tip-close" class="mc-tip-close" type="button" aria-label="关闭">×</button>
         </div>

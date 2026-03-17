@@ -1240,7 +1240,7 @@ async function togglePageContext() {
   if (state.pageContext) {
     state.pageContext = null;
     els.addUrlBtn.classList.remove('active');
-    els.addUrlBtn.setAttribute('data-tooltip', "阅读此页");
+    els.addUrlBtn.setAttribute('data-tooltip', "添加此页元数据");
     els.addUrlBtn.removeAttribute('title');
   } else {
     try {

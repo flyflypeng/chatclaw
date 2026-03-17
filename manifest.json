@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ChatClaw Sidebar",
+  "name": "ChatClaw：与你的🦞一起对话吧: OpenClaw, MicroClaw...",
   "version": "2.0.0",
   "description": "Your AI Assistant Sidebar. Connects to MicroClaw Agent.",
   "permissions": [
