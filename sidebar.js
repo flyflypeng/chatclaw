@@ -475,12 +475,6 @@ function connectCurrentAgent() {
     ws.onopen = () => {
       console.log('WS Connected');
       updateConnectionStatus(true);
-
-      if (state.preferredProtocol === 'openclaw') {
-        sendConnectRequest();
-      }
-      // Optional: Send handshake/auth if needed
-      // ws.send(JSON.stringify({ type: 'hello', token: state.apiToken }));
     };
 
     ws.onclose = (e) => {
@@ -557,13 +551,19 @@ function handleWebSocketMessage(dataStr) {
     } else if (data.type === 'res' && (data.id === pendingConnectRequestId || data.id === 'connect') && data.ok) {
       pendingConnectRequestId = null;
       state.wsProtocol = 'openclaw';
+      const issuedDeviceToken = data?.payload?.auth?.deviceToken;
+      if (typeof issuedDeviceToken === 'string' && issuedDeviceToken.trim()) {
+        saveCurrentAgentDeviceToken(issuedDeviceToken.trim());
+      }
       console.log('Handshake successful');
     } else if (data.type === 'event' && isChatEventName(data.event)) {
       handleChatEvent(data.event, data.payload);
     } else if (data.type === 'event' && data.event === 'connect.challenge') {
       if (state.preferredProtocol === 'legacy') return;
       console.log('Responding to connect.challenge');
-      sendConnectRequest();
+      const nonce = typeof data?.payload?.nonce === 'string' ? data.payload.nonce : '';
+      if (!nonce) return;
+      sendConnectRequest(nonce);
     } else if (data.type === 'res' && (data.id === pendingConnectRequestId || data.id === 'connect') && !data.ok) {
       pendingConnectRequestId = null;
       const errorMessage = data.error?.message || 'Handshake failed';
@@ -845,26 +845,182 @@ function makeRequestId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function sendConnectRequest() {
+function getOpenClawClientInfo() {
+  const version = typeof chrome !== 'undefined' && chrome.runtime?.getManifest ? chrome.runtime.getManifest().version : '1.0.0';
+  return {
+    id: 'cli',
+    mode: 'cli',
+    version,
+    platform: 'browser',
+    deviceFamily: 'browser-extension',
+    userAgent: `chatclaw-extension/${version}`
+  };
+}
+
+function base64UrlToBytes(input) {
+  const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function bytesToBase64Url(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function bytesToHex(bytes) {
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function sha256Hex(bytes) {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return bytesToHex(new Uint8Array(digest));
+}
+
+async function getOrCreateOpenClawDeviceIdentity() {
+  const stored = await storage.get(['openclawDeviceIdentity']);
+  const identity = stored.openclawDeviceIdentity;
+  if (identity && typeof identity.deviceId === 'string' && typeof identity.publicKey === 'string' && identity.privateKey && typeof identity.privateKey === 'object') {
+    const expectedId = await sha256Hex(base64UrlToBytes(identity.publicKey));
+    if (expectedId === identity.deviceId) {
+      return identity;
+    }
+  }
+
+  const keyPair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+  const publicJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+  const privateJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
+  if (!publicJwk || typeof publicJwk.x !== 'string') {
+    throw new Error('Failed to generate device public key');
+  }
+  const deviceId = await sha256Hex(base64UrlToBytes(publicJwk.x));
+  const nextIdentity = {
+    version: 1,
+    deviceId,
+    publicKey: publicJwk.x,
+    privateKey: privateJwk
+  };
+  await storage.set({ openclawDeviceIdentity: nextIdentity });
+  return nextIdentity;
+}
+
+function buildDeviceAuthPayloadV2(params) {
+  const scopes = Array.isArray(params.scopes) ? params.scopes.join(',') : '';
+  const token = params.token || '';
+  return ['v2', params.deviceId, params.clientId, params.clientMode, params.role, scopes, String(params.signedAtMs), token, params.nonce].join('|');
+}
+
+function buildDeviceAuthPayloadV3(params) {
+  const scopes = Array.isArray(params.scopes) ? params.scopes.join(',') : '';
+  const token = params.token || '';
+  const platform = params.platform || '';
+  const deviceFamily = params.deviceFamily || '';
+  return ['v3', params.deviceId, params.clientId, params.clientMode, params.role, scopes, String(params.signedAtMs), token, params.nonce, platform, deviceFamily].join('|');
+}
+
+function getCurrentAgentDeviceToken() {
+  const current = state.agents.find((a) => a.id === state.currentAgentId);
+  return current?.deviceToken || '';
+}
+
+async function saveCurrentAgentDeviceToken(deviceToken) {
+  if (!deviceToken) return;
+  const idx = state.agents.findIndex((a) => a.id === state.currentAgentId);
+  if (idx === -1) return;
+  if (state.agents[idx].deviceToken === deviceToken) return;
+  state.agents[idx] = { ...state.agents[idx], deviceToken };
+  await storage.set({ agents: state.agents });
+}
+
+async function buildOpenClawConnectParams({ token, nonce, deviceToken }) {
+  const challengeNonce = typeof nonce === 'string' ? nonce.trim() : '';
+  if (!challengeNonce) {
+    throw new Error('Missing connect.challenge nonce');
+  }
+  const client = getOpenClawClientInfo();
+  const role = 'operator';
+  const scopes = ['operator.read', 'operator.write'];
+  const identity = await getOrCreateOpenClawDeviceIdentity();
+  const auth = {};
+  if (token) auth.token = token;
+  if (deviceToken) auth.deviceToken = deviceToken;
+  const signatureToken = auth.token || auth.deviceToken || null;
+  const signedAt = Date.now();
+  const payload = buildDeviceAuthPayloadV3({
+    deviceId: identity.deviceId,
+    clientId: client.id,
+    clientMode: client.mode,
+    role,
+    scopes,
+    signedAtMs: signedAt,
+    token: signatureToken,
+    nonce: challengeNonce,
+    platform: client.platform,
+    deviceFamily: client.deviceFamily
+  });
+  const privateKey = await crypto.subtle.importKey('jwk', identity.privateKey, { name: 'Ed25519' }, false, ['sign']);
+  const signatureBuffer = await crypto.subtle.sign('Ed25519', privateKey, new TextEncoder().encode(payload));
+  const signature = bytesToBase64Url(new Uint8Array(signatureBuffer));
+
+  return {
+    minProtocol: PROTOCOL_VERSION,
+    maxProtocol: PROTOCOL_VERSION,
+    client: {
+      id: client.id,
+      version: client.version,
+      platform: client.platform,
+      deviceFamily: client.deviceFamily,
+      mode: client.mode
+    },
+    role,
+    scopes,
+    caps: [],
+    commands: [],
+    permissions: {},
+    auth,
+    locale: navigator.language || 'en-US',
+    userAgent: client.userAgent,
+    device: {
+      id: identity.deviceId,
+      publicKey: identity.publicKey,
+      signature,
+      signedAt,
+      nonce: challengeNonce
+    }
+  };
+}
+
+async function sendConnectRequest(nonce) {
   if (!state.activeSocket || state.activeSocket.readyState !== WebSocket.OPEN) return;
   const requestId = makeRequestId('connect');
   pendingConnectRequestId = requestId;
   state.wsProtocol = 'openclaw';
-  state.activeSocket.send(JSON.stringify({
-    type: 'req',
-    id: requestId,
-    method: 'connect',
-    params: {
-      minProtocol: PROTOCOL_VERSION,
-      maxProtocol: PROTOCOL_VERSION,
-      auth: {
-        token: state.apiToken || ''
-      },
-      preferences: {
-        includeThoughts: state.showThought
-      }
-    }
-  }));
+  try {
+    const params = await buildOpenClawConnectParams({
+      token: state.apiToken || '',
+      nonce,
+      deviceToken: getCurrentAgentDeviceToken()
+    });
+    state.activeSocket.send(JSON.stringify({
+      type: 'req',
+      id: requestId,
+      method: 'connect',
+      params
+    }));
+  } catch (err) {
+    pendingConnectRequestId = null;
+    const errorMessage = err instanceof Error ? err.message : 'Failed to build connect params';
+    appendAgentResponse(`\n*[Error: ${errorMessage}]*`);
+    finalizeAgentResponse();
+  }
 }
 
 function getCurrentSessionKey() {
@@ -1143,6 +1299,7 @@ function testAgentConnection(url, token, protocol = 'auto') {
       const ws = new WebSocket(url);
       let resolved = false;
       let connectTimer = null;
+      let connectSent = false;
       const connectRequestId = makeRequestId('connect-test');
 
       const settle = (result) => {
@@ -1160,24 +1317,13 @@ function testAgentConnection(url, token, protocol = 'auto') {
       }, 5000);
 
       ws.onopen = () => {
-        if (protocol === 'openclaw') {
-          ws.send(JSON.stringify({
-            type: 'req',
-            id: connectRequestId,
-            method: 'connect',
-            params: {
-              minProtocol: PROTOCOL_VERSION,
-              maxProtocol: PROTOCOL_VERSION,
-              auth: { token: token || '' }
-            }
-          }));
-        }
+        if (protocol === 'openclaw') return;
         connectTimer = setTimeout(() => {
           settle({ ok: true });
         }, 800);
       };
 
-      ws.onmessage = (e) => {
+      ws.onmessage = async (e) => {
         let data;
         try {
           data = JSON.parse(e.data);
@@ -1185,16 +1331,25 @@ function testAgentConnection(url, token, protocol = 'auto') {
           return;
         }
         if (data?.type === 'event' && data?.event === 'connect.challenge') {
-          ws.send(JSON.stringify({
-            type: 'req',
-            id: connectRequestId,
-            method: 'connect',
-            params: {
-              minProtocol: PROTOCOL_VERSION,
-              maxProtocol: PROTOCOL_VERSION,
-              auth: { token: token || '' }
-            }
-          }));
+          if (protocol === 'legacy' || connectSent) return;
+          const nonce = typeof data?.payload?.nonce === 'string' ? data.payload.nonce : '';
+          if (!nonce) return;
+          try {
+            const params = await buildOpenClawConnectParams({
+              token: token || '',
+              nonce
+            });
+            ws.send(JSON.stringify({
+              type: 'req',
+              id: connectRequestId,
+              method: 'connect',
+              params
+            }));
+            connectSent = true;
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to build connect params';
+            settle({ ok: false, error: message });
+          }
           return;
         }
         if (data?.type === 'res' && data?.id === connectRequestId) {
