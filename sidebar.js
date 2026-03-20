@@ -77,6 +77,8 @@ let state = {
 
 let pendingConnectRequestId = null;
 let currentSessionKey = null;
+let recentEventKeys = [];
+const recentEventKeySet = new Set();
 
 // DOM Elements
 const els = {
@@ -529,6 +531,10 @@ function handleWebSocketMessage(dataStr) {
     const data = JSON.parse(dataStr);
     console.log('Parsed WS Message:', data);
 
+    if (shouldSkipEventMessage(data)) {
+      return;
+    }
+
     // Assume protocol: { type: 'content' | 'error' | 'done', content: '...' }
     // MicroClaw might send: { type: "content", content: "..." }
 
@@ -558,6 +564,8 @@ function handleWebSocketMessage(dataStr) {
       console.log('Handshake successful');
     } else if (data.type === 'event' && isChatEventName(data.event)) {
       handleChatEvent(data.event, data.payload);
+    } else if (data.type === 'event' && data.event === 'agent') {
+      handleAgentEvent(data.payload);
     } else if (data.type === 'event' && data.event === 'connect.challenge') {
       if (state.preferredProtocol === 'legacy') return;
       console.log('Responding to connect.challenge');
@@ -675,27 +683,82 @@ function isChatEventName(eventName) {
   return eventName === 'chat' || eventName.startsWith('chat.') || eventName.startsWith('chat:');
 }
 
+function shouldSkipEventMessage(data) {
+  if (!data || data.type !== 'event') return false;
+  const seq = data.seq;
+  if (typeof seq !== 'number') return false;
+  const key = `${String(data.event || '')}:${String(data?.payload?.runId || '')}:${seq}`;
+  if (recentEventKeySet.has(key)) return true;
+  recentEventKeySet.add(key);
+  recentEventKeys.push(key);
+  if (recentEventKeys.length > 400) {
+    const staleKey = recentEventKeys.shift();
+    if (staleKey) recentEventKeySet.delete(staleKey);
+  }
+  return false;
+}
+
+function normalizeSessionKey(sessionKey) {
+  if (typeof sessionKey !== 'string') return '';
+  const trimmed = sessionKey.trim();
+  if (!trimmed) return '';
+  return trimmed.replace(/^agent:[^:]+:/, '');
+}
+
+function isMatchingSessionKey(payloadSessionKey) {
+  const current = normalizeSessionKey(currentSessionKey);
+  const incoming = normalizeSessionKey(payloadSessionKey);
+  if (!current || !incoming) return true;
+  return incoming === current;
+}
+
+function appendStreamingEventText({ deltaText = '', fullText = '' }) {
+  const delta = typeof deltaText === 'string' ? deltaText : '';
+  if (delta) {
+    appendAgentResponse(delta);
+    return;
+  }
+
+  const full = typeof fullText === 'string' ? fullText : '';
+  if (!full) return;
+  if (!currentStreamingContent) {
+    appendAgentResponse(full);
+    return;
+  }
+  if (full === currentStreamingContent) return;
+  if (full.startsWith(currentStreamingContent)) {
+    const rest = full.slice(currentStreamingContent.length);
+    if (rest) appendAgentResponse(rest);
+    return;
+  }
+  if (currentStreamingContent.startsWith(full)) return;
+  appendAgentResponse(full);
+}
+
 function handleChatEvent(eventName, payload) {
-  if (payload && currentSessionKey && payload.sessionKey && payload.sessionKey !== currentSessionKey) {
+  if (payload && payload.sessionKey && !isMatchingSessionKey(payload.sessionKey)) {
     return;
   }
 
   const text = extractContentText(payload || {});
-  const state = payload?.state || payload?.phase || '';
+  const phase = payload?.state || payload?.phase || '';
   if (eventName === 'chat') {
-    if (state === 'final') {
+    if (phase === 'final') {
       appendFinalResponse(text);
       finalizeAgentResponse();
       return;
     }
-    if (state === 'error') {
+    if (phase === 'error') {
       const message = text || payload?.error?.message || payload?.message || 'Unknown error';
       appendAgentResponse(`\n*[Error: ${message}]*`);
       finalizeAgentResponse();
       return;
     }
-    if (text) {
-      appendAgentResponse(text);
+    if (text || payload?.delta) {
+      appendStreamingEventText({
+        deltaText: extractContentText(payload?.delta),
+        fullText: text
+      });
       return;
     }
   }
@@ -719,7 +782,43 @@ function handleChatEvent(eventName, payload) {
   }
 
   if (text) {
-    appendAgentResponse(text);
+    appendStreamingEventText({ fullText: text });
+  }
+}
+
+function handleAgentEvent(payload) {
+  if (!payload || typeof payload !== 'object') return;
+  if (payload.sessionKey && !isMatchingSessionKey(payload.sessionKey)) return;
+
+  const stream = String(payload.stream || '');
+  const data = payload.data && typeof payload.data === 'object' ? payload.data : {};
+
+  if (stream === 'assistant') {
+    appendStreamingEventText({
+      deltaText: extractContentText(data.delta),
+      fullText: extractContentText(data)
+    });
+    return;
+  }
+
+  if (stream === 'error') {
+    const message = extractContentText(data) || payload?.error?.message || payload?.message || 'Unknown error';
+    appendAgentResponse(`\n*[Error: ${message}]*`);
+    finalizeAgentResponse();
+    return;
+  }
+
+  if (stream === 'lifecycle') {
+    const phase = String(data.phase || '').toLowerCase();
+    if (phase === 'error') {
+      const message = extractContentText(data) || payload?.error?.message || payload?.message || 'Unknown error';
+      appendAgentResponse(`\n*[Error: ${message}]*`);
+      finalizeAgentResponse();
+      return;
+    }
+    if (phase === 'final' || phase === 'finish' || phase === 'finished' || phase === 'complete' || phase === 'completed' || phase === 'done' || phase === 'end' || phase === 'ended') {
+      finalizeAgentResponse();
+    }
   }
 }
 
