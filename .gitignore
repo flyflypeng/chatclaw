@@ -19,3 +19,5 @@ get-microclaw-token.js
 node_modules/
 package-lock.json
 yarn.lock
+dist/
+.vite/

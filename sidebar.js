@@ -1,10 +1,11 @@
+import { marked } from 'marked';
 
 /**
  * ChatClaw Sidebar Logic
  * Handles WebSocket connection, chat UI, and settings.
  */
 
-const DEFAULT_GATEWAY = 'ws://127.0.0.1:10961/ws';
+const DEFAULT_GATEWAY = 'ws://127.0.0.1:10961';
 const PROTOCOL_VERSION = 3;
 // WebSocket Protocol Endpoints/Message Types
 const WS_TYPES = {
@@ -468,52 +469,73 @@ function connectCurrentAgent() {
 
   if (!state.gatewayUrl) return;
 
-  try {
-    console.log('Connecting to:', state.gatewayUrl);
-    const ws = new WebSocket(state.gatewayUrl);
-    pendingConnectRequestId = null;
-    state.wsProtocol = 'legacy';
+  const candidates = getGatewayCandidates(state.gatewayUrl);
+  let attemptIndex = 0;
 
-    ws.onopen = () => {
-      console.log('WS Connected');
-      updateConnectionStatus(true);
-    };
+  const connectWithCandidate = () => {
+    const candidateUrl = candidates[attemptIndex];
+    let opened = false;
 
-    ws.onclose = (e) => {
-      console.log('WS Closed', e.code, e.reason);
+    try {
+      console.log('Connecting to:', candidateUrl);
+      const ws = new WebSocket(candidateUrl);
+      pendingConnectRequestId = null;
+      state.wsProtocol = 'legacy';
 
-      const wasConnected = state.connected;
-      updateConnectionStatus(false);
-      state.activeSocket = null;
+      ws.onopen = async () => {
+        opened = true;
+        console.log('WS Connected');
+        updateConnectionStatus(true);
+        if (state.gatewayUrl !== candidateUrl) {
+          state.gatewayUrl = candidateUrl;
+          await persistCurrentAgentGateway(candidateUrl);
+        }
+      };
 
-      // Try to finalize any streaming message if connection drops
-      finalizeAgentResponse();
+      ws.onclose = (e) => {
+        console.log('WS Closed', e.code, e.reason);
+        if (!opened && attemptIndex < candidates.length - 1) {
+          attemptIndex += 1;
+          connectWithCandidate();
+          return;
+        }
 
-      // Auto-reconnect logic if it wasn't a deliberate close
-      if (wasConnected && !state.reconnectTimer) {
-        state.reconnectTimer = setTimeout(() => {
-          state.reconnectTimer = null;
-          connectCurrentAgent();
-        }, 3000);
+        const wasConnected = state.connected;
+        updateConnectionStatus(false);
+        state.activeSocket = null;
+        finalizeAgentResponse();
+
+        if (wasConnected && !state.reconnectTimer) {
+          state.reconnectTimer = setTimeout(() => {
+            state.reconnectTimer = null;
+            connectCurrentAgent();
+          }, 3000);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error('WS Error', candidateUrl, err);
+        updateConnectionStatus(false);
+      };
+
+      ws.onmessage = (e) => {
+        console.log('WS Message received:', e.data);
+        handleWebSocketMessage(e.data);
+      };
+
+      state.activeSocket = ws;
+    } catch (err) {
+      console.error('Failed to create WebSocket:', candidateUrl, err);
+      if (attemptIndex < candidates.length - 1) {
+        attemptIndex += 1;
+        connectWithCandidate();
+      } else {
+        updateConnectionStatus(false);
       }
-    };
+    }
+  };
 
-    ws.onerror = (err) => {
-      console.error('WS Error', err);
-      updateConnectionStatus(false);
-      // We don't nullify activeSocket here, onclose will handle it
-    };
-
-    ws.onmessage = (e) => {
-      console.log('WS Message received:', e.data);
-      handleWebSocketMessage(e.data);
-    };
-
-    state.activeSocket = ws;
-  } catch (err) {
-    console.error('Failed to create WebSocket:', err);
-    updateConnectionStatus(false);
-  }
+  connectWithCandidate();
 }
 
 function handleWebSocketMessage(dataStr) {
@@ -932,12 +954,26 @@ function normalizeUrl(url) {
 
   trimmed = trimmed.replace(/\/+$/, '');
 
-  // For MicroClaw, ensure it connects to the /ws endpoint if it's the root
-  if (!trimmed.endsWith('/ws') && trimmed.split('/').length <= 3) {
-    trimmed += '/ws';
-  }
-
   return trimmed;
+}
+
+function getGatewayCandidates(url) {
+  const primary = normalizeUrl(url);
+  const candidates = [primary];
+  if (primary.endsWith('/ws')) {
+    candidates.push(primary.replace(/\/ws$/, ''));
+  } else if (/^wss?:\/\/[^/]+$/i.test(primary)) {
+    candidates.push(`${primary}/ws`);
+  }
+  return Array.from(new Set(candidates));
+}
+
+async function persistCurrentAgentGateway(url) {
+  const agentIndex = state.agents.findIndex((agent) => agent.id === state.currentAgentId);
+  if (agentIndex === -1) return;
+  if (state.agents[agentIndex].url === url) return;
+  state.agents[agentIndex] = { ...state.agents[agentIndex], url };
+  await storage.set({ agents: state.agents });
 }
 
 function makeRequestId(prefix) {
@@ -1216,7 +1252,7 @@ function renderAgentList() {
       
       <div class="field-group">
         <label class="field-label">Agent 网关地址</label>
-        <input type="text" class="field-input agent-url" value="${escapeHtml(agent.url)}" placeholder="ws://127.0.0.1:10961/ws">
+        <input type="text" class="field-input agent-url" value="${escapeHtml(agent.url)}" placeholder="ws://127.0.0.1:10961">
       </div>
       
       <div class="field-group">
@@ -1680,7 +1716,7 @@ function renderMarkdown(element, text) {
   let processedText = text.replace(/(^|\s)#([^\s#]+)/g, '$1&#35;$2');
 
   // If text contains Markdown syntax and marked is loaded, use it
-  if (isMarkdown(text) && typeof marked !== 'undefined') {
+  if (isMarkdown(text)) {
     element.innerHTML = marked.parse(processedText);
     return;
   }
