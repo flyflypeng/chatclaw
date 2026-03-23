@@ -733,6 +733,7 @@ function handleOpenClawChatEvent(payload) {
   }
   if (phase === 'final' || phase === 'done' || phase === 'end') {
     finalizeAgentResponse();
+    return;
   }
 }
 
@@ -1033,11 +1034,19 @@ let currentStreamingContent = '';
 
 let finalizeTimeout = null;
 
+/**
+ * Resets the fallback timeout timer for streaming responses (anti-stall mechanism).
+ * During a streaming output, if no new data chunks are received within the specified time (10 seconds),
+ * it assumes the connection was unexpectedly interrupted or model generation has stalled.
+ * It will then forcibly call finalizeAgentResponse() to end the current response,
+ * preventing the UI from being permanently stuck in a "typing" state.
+ */
 function resetFinalizeTimeout() {
   if (finalizeTimeout) clearTimeout(finalizeTimeout);
   finalizeTimeout = setTimeout(() => {
+    console.warn('Streaming response timed out after 10s of inactivity. Forcing finalization.');
     finalizeAgentResponse();
-  }, 1000); // 1s without data -> finalize
+  }, 10000); // 10s without data -> finalize
 }
 
 function appendAgentResponse(text) {
