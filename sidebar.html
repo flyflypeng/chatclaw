@@ -198,6 +198,24 @@
       </div>
     </div>
 
+    <!-- Alert Dialog Modal -->
+    <div id="alert-modal" class="modal hidden" style="z-index: 200;">
+      <div class="modal-content" style="max-width: 280px;">
+        <div class="modal-header">
+          <h3 id="alert-title">提示</h3>
+          <button id="close-alert" class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body" style="padding-bottom: 20px;">
+          <p id="alert-message" style="margin: 0; font-size: 13px; color: var(--mc-text-2); line-height: 1.5;">
+            操作失败</p>
+          <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
+            <button id="alert-ok-btn" class="btn-action"
+              style="flex: 0 1 auto; padding: 6px 16px; background: var(--mc-accent); color: white; border: none;">确定</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Settings Modal -->
     <div id="settings-modal" class="modal hidden">
       <div class="modal-content">

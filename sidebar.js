@@ -147,6 +147,11 @@ const els = {
   confirmOkBtn: document.getElementById('confirm-ok-btn'),
   confirmCancelBtn: document.getElementById('confirm-cancel-btn'),
   closeConfirmBtn: document.getElementById('close-confirm'),
+  alertModal: document.getElementById('alert-modal'),
+  alertTitle: document.getElementById('alert-title'),
+  alertMessage: document.getElementById('alert-message'),
+  alertOkBtn: document.getElementById('alert-ok-btn'),
+  closeAlertBtn: document.getElementById('close-alert'),
   modelBtn: document.getElementById('model-btn'),
   currentModelName: document.getElementById('current-model-name'),
   modelMenu: document.getElementById('model-menu'),
@@ -1494,13 +1499,13 @@ if (els.sessionsList) {
       const confirmed = await showConfirmDialog('删除会话', '确认删除此会话吗？');
       if (confirmed) {
         try {
-          await sendWebSocketRequest('sessions.delete', { sessionKey, key: sessionKey });
+          await sendWebSocketRequest('sessions.delete', { key: sessionKey });
           item.remove();
           if (els.sessionsList.children.length === 0) {
             els.sessionsList.innerHTML = '<div style="text-align:center; padding:20px; color:var(--mc-text-3);">暂无历史会话</div>';
           }
         } catch (err) {
-          alert('删除失败: ' + err.message);
+          await showAlertDialog('删除失败', err.message);
         }
       }
     } else {
@@ -1631,7 +1636,7 @@ async function saveAgentFromCard(id, card) {
 
   // URL Validation
   if (!name || !url) {
-    alert('Name and URL are required');
+    await showAlertDialog('提示', 'Name and URL are required');
     return;
   }
 
@@ -1650,7 +1655,7 @@ async function saveAgentFromCard(id, card) {
 
   // Double check
   if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
-    alert('URL must start with ws:// or wss://');
+    await showAlertDialog('提示', 'URL must start with ws:// or wss://');
     return;
   }
 
@@ -2056,6 +2061,41 @@ function showConfirmDialog(title, message) {
   });
 }
 
+function showAlertDialog(title, message) {
+  return new Promise((resolve) => {
+    if (!els.alertModal) {
+      resolve(alert(`${title}\n\n${message}`));
+      return;
+    }
+
+    els.alertTitle.textContent = title || '提示';
+    els.alertMessage.textContent = message || '';
+    els.alertModal.classList.remove('hidden');
+
+    const cleanup = () => {
+      els.alertModal.classList.add('hidden');
+      els.alertOkBtn.removeEventListener('click', onOk);
+      els.closeAlertBtn.removeEventListener('click', onOk);
+      els.alertModal.removeEventListener('click', onOutsideClick);
+    };
+
+    const onOk = () => {
+      cleanup();
+      resolve();
+    };
+
+    const onOutsideClick = (e) => {
+      if (e.target === els.alertModal) {
+        onOk();
+      }
+    };
+
+    els.alertOkBtn.addEventListener('click', onOk);
+    els.closeAlertBtn.addEventListener('click', onOk);
+    els.alertModal.addEventListener('click', onOutsideClick);
+  });
+}
+
 function renderMessageToUI(role, content, timestamp, shouldScroll = true) {
   const id = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   const div = document.createElement('div');
@@ -2183,7 +2223,7 @@ async function handleFileSelect(e) {
       updateSendButton();
     }
   } else {
-    alert('Only text files are supported for now.');
+    await showAlertDialog('提示', 'Only text files are supported for now.');
     els.fileInput.value = '';
   }
 }
