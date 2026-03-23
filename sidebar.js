@@ -75,6 +75,7 @@ let state = {
   optimizingPrompt: false,
   optimizedPromptBuffer: '',
   preferredProtocol: 'auto',
+  supportedMethods: [],
   // New State
   editingPromptId: null,
   slashCommandActive: false,
@@ -85,6 +86,7 @@ let state = {
 let pendingConnectRequestId = null;
 let pendingConnectProtocol = null;
 let currentSessionKey = null;
+let currentRunId = null;
 let recentEventKeys = [];
 const recentEventKeySet = new Set();
 
@@ -494,6 +496,7 @@ function connectCurrentAgent() {
       pendingConnectRequestId = null;
       pendingConnectProtocol = null;
       state.wsProtocol = AGENT_PROTOCOLS.MICROCLAW;
+      state.supportedMethods = [];
 
       ws.onopen = async () => {
         opened = true;
@@ -552,12 +555,8 @@ function connectCurrentAgent() {
 
 function handleWebSocketMessage(dataStr) {
   try {
-    // Check if the message is raw text instead of JSON
-    if (typeof dataStr === 'string' && (!dataStr.trim().startsWith('{') && !dataStr.trim().startsWith('['))) {
-      console.log('Received plain text WS Message:', dataStr);
+    if (isRawWebSocketText(dataStr)) {
       appendAgentResponse(dataStr);
-      // We don't finalize immediately here to allow chunked raw text
-      // We rely on a timeout to finalize if no more data comes in
       resetFinalizeTimeout();
       return;
     }
@@ -580,58 +579,15 @@ function handleWebSocketMessage(dataStr) {
       return;
     }
 
-    if (data.type === 'res') {
-      if ((data.id === pendingConnectRequestId || data.id === 'connect')) {
-        if (data.ok) {
-          pendingConnectRequestId = null;
-          state.wsProtocol = pendingConnectProtocol || AGENT_PROTOCOLS.OPENCLAW;
-          pendingConnectProtocol = null;
-          updateConnectionStatus(true);
-          const issuedDeviceToken = data?.payload?.auth?.deviceToken;
-          if (typeof issuedDeviceToken === 'string' && issuedDeviceToken.trim()) {
-            saveCurrentAgentDeviceToken(issuedDeviceToken.trim());
-          }
-          console.log('Handshake successful');
-        } else {
-          pendingConnectRequestId = null;
-          pendingConnectProtocol = null;
-          const errorMessage = data.error?.message || 'Handshake failed';
-          updateConnectionStatus(false);
-          if (!shouldSuppressInitialAuthError(data.error)) {
-            appendAgentResponse(`\n*[Error: ${errorMessage}]*`);
-            finalizeAgentResponse();
-          }
-        }
-      } else if (data.ok === false) {
-        const errorMessage = data.error?.message || 'Request failed';
-        appendAgentResponse(`\n*[Error: ${errorMessage}]*`);
-        finalizeAgentResponse();
-      } else if (data.id && (String(data.id).startsWith('chat-') || String(data.id).startsWith('req-'))) {
-        const status = String(data?.payload?.status || '').toLowerCase();
-        if (status && (status === 'started' || status === 'accepted' || status === 'queued' || status === 'pending' || status === 'running')) {
-          return;
-        }
-        finalizeAgentResponse();
-      }
-    } else if (data.type === 'event') {
-      if (data.event === 'connect.challenge') {
-        const nonce = typeof data?.payload?.nonce === 'string' ? data.payload.nonce : '';
-        if (nonce) {
-          sendConnectRequest(nonce, resolveHandshakeProtocol(state.preferredProtocol));
-        }
-      } else if (String(data.event).startsWith('chat') || String(data.event).startsWith('session') || data.event === 'agent') {
-        handleAgentStreamingEvent(data);
-      }
-    } else if (data.type === 'ping') {
-      state.activeSocket.send(JSON.stringify({ type: 'pong' }));
-    } else if (data.type === 'error') {
-      appendAgentResponse(`\n*[Error: ${data.message || 'Unknown error'}]*`);
-      finalizeAgentResponse();
-    } else if (data.type === 'content' || data.type === 'message') {
-      const content = extractContentText(data);
-      if (content) appendAgentResponse(content);
-    } else if (data.type === 'done' || data.type === 'end') {
-      finalizeAgentResponse();
+    if (handleCommonSocketMessage(data)) return;
+
+    const protocol = resolveActiveSocketProtocol();
+    if (protocol === AGENT_PROTOCOLS.OPENCLAW) {
+      if (handleOpenClawSocketMessage(data)) return;
+    } else if (protocol === AGENT_PROTOCOLS.MICROCLAW) {
+      if (handleMicroClawSocketMessage(data)) return;
+    } else if (handleLegacySocketMessage(data)) {
+      return;
     }
 
   } catch (err) {
@@ -641,6 +597,197 @@ function handleWebSocketMessage(dataStr) {
       resetFinalizeTimeout();
     }
   }
+}
+
+function isRawWebSocketText(dataStr) {
+  if (typeof dataStr !== 'string') return false;
+  const trimmed = dataStr.trim();
+  if (!trimmed) return false;
+  return !trimmed.startsWith('{') && !trimmed.startsWith('[');
+}
+
+function resolveActiveSocketProtocol() {
+  if (state.wsProtocol === AGENT_PROTOCOLS.OPENCLAW) return AGENT_PROTOCOLS.OPENCLAW;
+  if (state.wsProtocol === AGENT_PROTOCOLS.MICROCLAW) return AGENT_PROTOCOLS.MICROCLAW;
+  return AGENT_PROTOCOLS.LEGACY;
+}
+
+function handleCommonSocketMessage(data) {
+  if (!data || typeof data !== 'object') return false;
+  if (handleConnectLifecycleMessage(data)) return true;
+  if (data.type === 'ping') {
+    if (state.activeSocket && state.activeSocket.readyState === WebSocket.OPEN) {
+      state.activeSocket.send(JSON.stringify({ type: 'pong' }));
+    }
+    return true;
+  }
+  if (data.type === 'error') {
+    appendAgentResponse(`\n*[Error: ${data.message || 'Unknown error'}]*`);
+    finalizeAgentResponse();
+    return true;
+  }
+  if (data.type === 'done' || data.type === 'end') {
+    finalizeAgentResponse();
+    return true;
+  }
+  return false;
+}
+
+function handleConnectLifecycleMessage(data) {
+  if (!data || typeof data !== 'object') return false;
+  if (data.type === 'event' && data.event === 'connect.challenge') {
+    const nonce = typeof data?.payload?.nonce === 'string' ? data.payload.nonce : '';
+    if (nonce) {
+      sendConnectRequest(nonce, resolveHandshakeProtocol(state.preferredProtocol));
+    }
+    return true;
+  }
+  if (data.type !== 'res') return false;
+  if (!(data.id === pendingConnectRequestId || data.id === 'connect')) return false;
+  if (data.ok) {
+    pendingConnectRequestId = null;
+    state.wsProtocol = pendingConnectProtocol || AGENT_PROTOCOLS.OPENCLAW;
+    pendingConnectProtocol = null;
+    const methods = Array.isArray(data?.payload?.features?.methods)
+      ? data.payload.features.methods.filter((item) => typeof item === 'string')
+      : [];
+    state.supportedMethods = methods;
+    updateConnectionStatus(true);
+    const issuedDeviceToken = data?.payload?.auth?.deviceToken;
+    if (typeof issuedDeviceToken === 'string' && issuedDeviceToken.trim()) {
+      saveCurrentAgentDeviceToken(issuedDeviceToken.trim());
+    }
+    console.log('Handshake successful');
+    return true;
+  }
+  pendingConnectRequestId = null;
+  pendingConnectProtocol = null;
+  const errorMessage = data.error?.message || 'Handshake failed';
+  updateConnectionStatus(false);
+  if (!shouldSuppressInitialAuthError(data.error)) {
+    appendAgentResponse(`\n*[Error: ${errorMessage}]*`);
+    finalizeAgentResponse();
+  }
+  return true;
+}
+
+function handleOpenClawSocketMessage(data) {
+  if (!data || typeof data !== 'object') return false;
+  if (handleAgentRequestLifecycleResponse(data)) return true;
+  if (data.type === 'event' && String(data.event || '') === 'chat') {
+    handleOpenClawChatEvent(data.payload || {});
+    return true;
+  }
+  if (data.type === 'event' && String(data.event || '') === 'agent') {
+    handleOpenClawAgentEvent(data.payload || {});
+    return true;
+  }
+  if (data.type === 'event' && isAgentStreamEvent(data.event)) {
+    handleAgentStreamingEvent(data);
+    return true;
+  }
+  if (data.type === 'content' || data.type === 'message') {
+    return handleInlineContentMessage(data);
+  }
+  return false;
+}
+
+function handleOpenClawChatEvent(payload) {
+  const phase = String(payload?.state || '').toLowerCase();
+  const text = extractContentText(payload?.message || payload);
+  const runId = typeof payload?.runId === 'string' ? payload.runId : '';
+  if (runId && !currentRunId) currentRunId = runId;
+  if (payload?.sessionKey && !isMatchingSessionKey(payload.sessionKey)) {
+    if (runId && currentRunId && runId === currentRunId) {
+      currentSessionKey = payload.sessionKey;
+    } else {
+      return;
+    }
+  }
+  if (phase === 'error') {
+    const message = payload?.error?.message || payload?.message || 'Unknown error';
+    appendAgentResponse(`\n*[Error: ${message}]*`);
+    finalizeAgentResponse();
+    return;
+  }
+  if (phase === 'delta') {
+    if (text) appendFinalResponse(text);
+    return;
+  }
+  if (phase === 'final' || phase === 'done' || phase === 'end') {
+    finalizeAgentResponse();
+  }
+}
+
+function handleOpenClawAgentEvent(payload) {
+  const stream = String(payload?.stream || '').toLowerCase();
+  const phase = String(payload?.data?.phase || '').toLowerCase();
+  if (stream === 'lifecycle') {
+    if (phase === 'error') {
+      const message = payload?.data?.message || payload?.error?.message || 'Unknown error';
+      appendAgentResponse(`\n*[Error: ${message}]*`);
+      finalizeAgentResponse();
+      return;
+    }
+    if (phase === 'end' || phase === 'done' || phase === 'final') {
+      finalizeAgentResponse();
+    }
+  }
+}
+
+function handleMicroClawSocketMessage(data) {
+  if (!data || typeof data !== 'object') return false;
+  if (handleAgentRequestLifecycleResponse(data)) return true;
+  if (data.type === 'event' && isAgentStreamEvent(data.event)) {
+    handleAgentStreamingEvent(data);
+    return true;
+  }
+  if (data.type === 'content' || data.type === 'message') {
+    return handleInlineContentMessage(data);
+  }
+  return false;
+}
+
+function handleLegacySocketMessage(data) {
+  if (!data || typeof data !== 'object') return false;
+  if (data.type === 'content' || data.type === 'message') {
+    return handleInlineContentMessage(data);
+  }
+  if (handleAgentRequestLifecycleResponse(data)) return true;
+  return false;
+}
+
+function handleAgentRequestLifecycleResponse(data) {
+  if (!data || data.type !== 'res') return false;
+  if (data.ok === false) {
+    const errorMessage = data.error?.message || 'Request failed';
+    appendAgentResponse(`\n*[Error: ${errorMessage}]*`);
+    finalizeAgentResponse();
+    return true;
+  }
+  if (!data.id) return false;
+  const requestId = String(data.id);
+  if (!requestId.startsWith('chat-') && !requestId.startsWith('req-')) return false;
+  const status = String(data?.payload?.status || '').toLowerCase();
+  if (status && (status === 'started' || status === 'accepted' || status === 'queued' || status === 'pending' || status === 'running')) {
+    const runId = typeof data?.payload?.runId === 'string' ? data.payload.runId : '';
+    if (runId) currentRunId = runId;
+    return true;
+  }
+  finalizeAgentResponse();
+  return true;
+}
+
+function isAgentStreamEvent(eventName) {
+  const event = String(eventName || '');
+  return event.startsWith('chat') || event.startsWith('session') || event === 'agent';
+}
+
+function handleInlineContentMessage(data) {
+  const content = extractContentText(data);
+  if (!content) return false;
+  appendAgentResponse(content);
+  return true;
 }
 
 function shouldSuppressInitialAuthError(error) {
@@ -658,6 +805,7 @@ function isUnauthorizedError(error) {
 }
 
 function extractContentText(data) {
+  if (typeof data === 'string') return data;
   if (!data || typeof data !== 'object') return '';
   const microClawText = extractMicroClawContentText(data);
   if (microClawText) return microClawText;
@@ -787,6 +935,20 @@ function isMatchingSessionKey(payloadSessionKey) {
 function handleAgentStreamingEvent(data) {
   const eventName = data.event || '';
   const payload = data.payload || {};
+  const runId = typeof payload.runId === 'string' ? payload.runId : '';
+
+  if (payload.sessionKey && !isMatchingSessionKey(payload.sessionKey)) {
+    if (!runId || !currentRunId || runId !== currentRunId) {
+      return;
+    }
+    currentSessionKey = payload.sessionKey;
+  } else if (payload.sessionKey && runId && currentRunId && runId === currentRunId && currentSessionKey !== payload.sessionKey) {
+    currentSessionKey = payload.sessionKey;
+  }
+
+  if (runId && !currentRunId) {
+    currentRunId = runId;
+  }
 
   if (payload.sessionKey && !isMatchingSessionKey(payload.sessionKey)) {
     return;
@@ -925,6 +1087,7 @@ function finalizeAgentResponse() {
     currentStreamingMessageId = null;
     currentStreamingContent = '';
   }
+  currentRunId = null;
   state.isTyping = false;
 }
 
@@ -981,6 +1144,15 @@ async function persistCurrentAgentGateway(url) {
 
 function makeRequestId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function resolveOpenClawChatMethod() {
+  const methods = Array.isArray(state.supportedMethods) ? state.supportedMethods : [];
+  const hasChatSend = methods.includes('chat.send');
+  const hasSessionsSend = methods.includes('sessions.send');
+  if (hasChatSend) return 'chat.send';
+  if (hasSessionsSend) return 'sessions.send';
+  return 'chat.send';
 }
 
 function getOpenClawClientInfo() {
@@ -1085,7 +1257,7 @@ async function buildOpenClawConnectParams({ token, nonce, deviceToken }) {
   }
   const client = getOpenClawClientInfo();
   const role = 'operator';
-  const scopes = ['operator.read', 'operator.write'];
+  const scopes = ['operator.read', 'operator.write', 'operator.admin'];
   const identity = await getOrCreateOpenClawDeviceIdentity();
   const auth = {};
   if (token) auth.token = token;
@@ -1666,12 +1838,14 @@ async function sendMessage() {
     const mergedMessage = buildChatSendMessage(text, payload.context, payload.context.attachment);
     const sessionKey = getCurrentSessionKey();
     currentSessionKey = sessionKey;
+    currentRunId = null;
     const wsPayload = (() => {
       if (state.wsProtocol === AGENT_PROTOCOLS.OPENCLAW) {
+        const method = resolveOpenClawChatMethod();
         return {
           type: 'req',
           id: makeRequestId('chat'),
-          method: 'sessions.send',
+          method,
           params: {
             sessionKey,
             message: mergedMessage,
