@@ -401,16 +401,15 @@ body {
   transform: translateX(-50%) translateY(4px);
   background-color: #0b1020;
   color: #fff;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.mc-toolicon[data-tooltip]:hover::before,
-.mc-toolicon[data-tooltip]:hover::after {
+.mc-toolicon:hover[data-tooltip]::before,
+.mc-toolicon:hover[data-tooltip]::after {
   visibility: visible;
   opacity: 1;
   transform: translateX(-50%) translateY(0);
@@ -419,6 +418,16 @@ body {
 .mc-toolicon:hover {
   background: rgba(255, 255, 255, 0.9);
   border-color: rgba(124, 58, 237, 0.16);
+}
+
+.mc-new-session {
+  color: #fff;
+  background: var(--mc-accent, #7c3aed);
+}
+
+.mc-toolicon.mc-new-session:hover {
+  background: var(--mc-accent-2, #6d28d9);
+  border-color: transparent;
 }
 
 .mc-toolicon.active {
@@ -782,6 +791,84 @@ body {
 .prompt-item:hover {
   background: rgba(255, 255, 255, 1);
   border-color: rgba(124, 58, 237, 0.18);
+}
+
+#sessions-modal {
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding-top: 56px;
+  /* Topbar height */
+  padding-right: 14px;
+  background: transparent;
+}
+
+#sessions-modal .modal-content {
+  width: 320px;
+  max-width: 100%;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+}
+
+.sessions-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border: 1px solid var(--mc-border);
+  border-radius: 12px;
+  background: rgba(241, 243, 249, 0.65);
+  cursor: pointer;
+}
+
+.session-item:hover {
+  background: rgba(255, 255, 255, 1);
+  border-color: rgba(124, 58, 237, 0.18);
+}
+
+.session-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.session-key {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(11, 16, 32, 0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-time {
+  font-size: 11px;
+  color: var(--mc-text-3);
+  margin-top: 4px;
+}
+
+.delete-session-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--mc-text-2);
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+.delete-session-btn:hover {
+  border-color: rgba(239, 68, 68, 0.25);
+  color: var(--mc-red);
 }
 
 .prompt-text {

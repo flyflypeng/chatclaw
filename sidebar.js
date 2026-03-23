@@ -89,6 +89,7 @@ let currentSessionKey = null;
 let currentRunId = null;
 let recentEventKeys = [];
 const recentEventKeySet = new Set();
+const pendingRequests = new Map();
 
 // DOM Elements
 const els = {
@@ -136,10 +137,16 @@ const els = {
   tipBanner: document.getElementById('tip-banner'),
   tipClose: document.getElementById('tip-close'),
   tipSettingsLink: document.getElementById('tip-settings-link'),
-  menuBtn: document.getElementById('menu-btn'),
-  menu: document.getElementById('mc-menu'),
-  menuOpenPrompts: document.getElementById('menu-open-prompts'),
-  menuOpenSettings: document.getElementById('menu-open-settings'),
+  sessionsBtn: document.getElementById('sessions-btn'),
+  sessionsModal: document.getElementById('sessions-modal'),
+  closeSessionsBtn: document.getElementById('close-sessions'),
+  sessionsList: document.getElementById('sessions-list'),
+  confirmModal: document.getElementById('confirm-modal'),
+  confirmTitle: document.getElementById('confirm-title'),
+  confirmMessage: document.getElementById('confirm-message'),
+  confirmOkBtn: document.getElementById('confirm-ok-btn'),
+  confirmCancelBtn: document.getElementById('confirm-cancel-btn'),
+  closeConfirmBtn: document.getElementById('close-confirm'),
   modelBtn: document.getElementById('model-btn'),
   currentModelName: document.getElementById('current-model-name'),
   modelMenu: document.getElementById('model-menu'),
@@ -401,27 +408,20 @@ function setupEventListeners() {
     });
   }
 
-  if (els.menuBtn && els.menu) {
-    els.menuBtn.addEventListener('click', () => {
-      els.menu.classList.toggle('hidden');
+  if (els.sessionsBtn && els.sessionsModal) {
+    els.sessionsBtn.addEventListener('click', () => {
+      els.sessionsModal.classList.remove('hidden');
+      loadAndRenderSessions();
     });
 
-    document.addEventListener('click', (e) => {
-      if (!els.menu) return;
-      const target = e.target;
-      if (!(target instanceof Element)) return;
-      if (target.closest('#mc-menu') || target.closest('#menu-btn')) return;
-      els.menu.classList.add('hidden');
+    els.closeSessionsBtn?.addEventListener('click', () => {
+      els.sessionsModal.classList.add('hidden');
     });
 
-    els.menuOpenPrompts?.addEventListener('click', () => {
-      els.menu.classList.add('hidden');
-      openPrompts();
-    });
-    els.menuOpenSettings?.addEventListener('click', () => {
-      els.menu.classList.add('hidden');
-      els.settingsModal.classList.remove('hidden');
-      openSettings();
+    els.sessionsModal.addEventListener('click', (e) => {
+      if (e.target === els.sessionsModal) {
+        els.sessionsModal.classList.add('hidden');
+      }
     });
   }
 
@@ -464,7 +464,8 @@ function setupEventListeners() {
     } else if (target.closest('.btn-connect')) {
       await connectAgentFromCard(id, card);
     } else if (target.closest('.delete-agent-btn')) {
-      if (confirm('Are you sure you want to delete this agent?')) {
+      const confirmed = await showConfirmDialog('删除 Agent', 'Are you sure you want to delete this agent?');
+      if (confirmed) {
         deleteAgent(id);
       }
     }
@@ -563,6 +564,17 @@ function handleWebSocketMessage(dataStr) {
 
     const data = JSON.parse(dataStr);
     console.log('Parsed WS Message:', data);
+
+    if (data.id && pendingRequests.has(data.id)) {
+      const request = pendingRequests.get(data.id);
+      pendingRequests.delete(data.id);
+      if (data.ok === false) {
+        request.reject(new Error(data.error?.message || "Request failed"));
+      } else {
+        request.resolve(data.payload);
+      }
+      return;
+    }
 
     if (shouldSkipEventMessage(data)) {
       return;
@@ -1405,6 +1417,107 @@ function updateConnectionStatus(connected) {
   renderAgentList(); // Re-render to show status dots
 }
 
+// --- Session Management Logic ---
+
+function sendWebSocketRequest(method, params = {}) {
+  return new Promise((resolve, reject) => {
+    if (!state.activeSocket || state.activeSocket.readyState !== WebSocket.OPEN) {
+      return reject(new Error("WebSocket not connected"));
+    }
+    const reqId = makeRequestId('custom');
+    pendingRequests.set(reqId, { resolve, reject, timestamp: Date.now() });
+    state.activeSocket.send(JSON.stringify({
+      type: 'req',
+      id: reqId,
+      method,
+      params
+    }));
+
+    setTimeout(() => {
+      if (pendingRequests.has(reqId)) {
+        pendingRequests.get(reqId).reject(new Error("Request timeout"));
+        pendingRequests.delete(reqId);
+      }
+    }, 10000);
+  });
+}
+
+async function loadAndRenderSessions() {
+  if (!els.sessionsList) return;
+  els.sessionsList.innerHTML = '<div style="text-align:center; padding:20px; color:var(--mc-text-3);">加载中...</div>';
+
+  try {
+    const payload = await sendWebSocketRequest('sessions.list');
+    let sessions = [];
+    if (Array.isArray(payload?.sessions)) {
+      sessions = payload.sessions;
+    } else if (payload?.sessions?.recent) {
+      sessions = payload.sessions.recent;
+    } else if (Array.isArray(payload?.recent)) {
+      sessions = payload.recent;
+    } else if (Array.isArray(payload)) {
+      sessions = payload;
+    }
+
+    if (!Array.isArray(sessions) || sessions.length === 0) {
+      els.sessionsList.innerHTML = '<div style="text-align:center; padding:20px; color:var(--mc-text-3);">暂无历史会话</div>';
+      return;
+    }
+
+    els.sessionsList.innerHTML = sessions.map(s => {
+      const updatedAt = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : '';
+      return `
+        <div class="session-item" data-key="${escapeHtml(s.key || s.sessionKey || '')}">
+          <div class="session-info">
+            <div class="session-key" title="${escapeHtml(s.key || s.sessionKey || '')}">${escapeHtml(s.key || s.sessionKey || 'Unknown Session')}</div>
+            <div class="session-time">${updatedAt}</div>
+          </div>
+          <button class="delete-session-btn" title="删除会话">&times;</button>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    els.sessionsList.innerHTML = `<div style="text-align:center; padding:20px; color:var(--mc-red);">获取会话失败: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+if (els.sessionsList) {
+  els.sessionsList.addEventListener('click', async (e) => {
+    const target = e.target;
+    const item = target.closest('.session-item');
+    if (!item) return;
+
+    const sessionKey = item.dataset.key;
+
+    if (target.closest('.delete-session-btn')) {
+      e.stopPropagation();
+      const confirmed = await showConfirmDialog('删除会话', '确认删除此会话吗？');
+      if (confirmed) {
+        try {
+          await sendWebSocketRequest('sessions.delete', { sessionKey, key: sessionKey });
+          item.remove();
+          if (els.sessionsList.children.length === 0) {
+            els.sessionsList.innerHTML = '<div style="text-align:center; padding:20px; color:var(--mc-text-3);">暂无历史会话</div>';
+          }
+        } catch (err) {
+          alert('删除失败: ' + err.message);
+        }
+      }
+    } else {
+      // Switch to session
+      const currentAgent = state.agents.find(a => a.id === state.currentAgentId);
+      if (currentAgent) {
+        currentAgent.sessionKey = sessionKey;
+        currentAgent.messages = []; // Clear current UI messages to force reload from backend if supported, or just start fresh UI for that session
+        storage.set({ agents: state.agents });
+        els.chatContainer.innerHTML = '';
+        if (els.home) els.home.classList.remove('hidden');
+        els.sessionsModal.classList.add('hidden');
+      }
+    }
+  });
+}
+
 // --- Agent Management Logic ---
 
 function renderModelMenu() {
@@ -1901,6 +2014,48 @@ function saveMessageToHistory(role, content) {
 
 // --- UI Helpers ---
 
+function showConfirmDialog(title, message) {
+  return new Promise((resolve) => {
+    if (!els.confirmModal) {
+      resolve(confirm(message));
+      return;
+    }
+
+    els.confirmTitle.textContent = title || '提示';
+    els.confirmMessage.textContent = message || '确认执行此操作吗？';
+    els.confirmModal.classList.remove('hidden');
+
+    const cleanup = () => {
+      els.confirmModal.classList.add('hidden');
+      els.confirmOkBtn.removeEventListener('click', onOk);
+      els.confirmCancelBtn.removeEventListener('click', onCancel);
+      els.closeConfirmBtn.removeEventListener('click', onCancel);
+      els.confirmModal.removeEventListener('click', onOutsideClick);
+    };
+
+    const onOk = () => {
+      cleanup();
+      resolve(true);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve(false);
+    };
+
+    const onOutsideClick = (e) => {
+      if (e.target === els.confirmModal) {
+        onCancel();
+      }
+    };
+
+    els.confirmOkBtn.addEventListener('click', onOk);
+    els.confirmCancelBtn.addEventListener('click', onCancel);
+    els.closeConfirmBtn.addEventListener('click', onCancel);
+    els.confirmModal.addEventListener('click', onOutsideClick);
+  });
+}
+
 function renderMessageToUI(role, content, timestamp, shouldScroll = true) {
   const id = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   const div = document.createElement('div');
@@ -2224,7 +2379,8 @@ async function savePrompt() {
 
 async function deletePrompt(e, index) {
   e.stopPropagation();
-  if (!confirm('确定要删除这个提示词吗？')) return;
+  const confirmed = await showConfirmDialog('删除提示词', '确定要删除这个提示词吗？');
+  if (!confirmed) return;
 
   const id = els.promptsList.children[index]?.dataset.id;
   if (!id) return;
