@@ -111,6 +111,171 @@ let currentRunId = null;
 let recentEventKeys = [];
 const recentEventKeySet = new Set();
 const pendingRequests = new Map();
+const STREAM_DEBUG_STORAGE_KEY = 'chatclaw_stream_debug';
+const STREAM_DEBUG_MAX_LOGS = 600;
+const streamDebugLogs = [];
+const streamChunkCounters = new Map();
+let openClawDeferredFinalizeTimer = null;
+let lastFinalizedAgentMessageId = null;
+let lastFinalizedAgentContent = '';
+let lastFinalizedRunId = '';
+let currentStreamingReopenedFromFinalized = false;
+
+function isStreamDebugEnabled() {
+  try {
+    return localStorage.getItem(STREAM_DEBUG_STORAGE_KEY) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+function toDebugPreview(text, max = 120) {
+  if (typeof text !== 'string') return '';
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  return normalized.length > max ? `${normalized.slice(0, max)}…` : normalized;
+}
+
+function pushStreamDebugLog(entry) {
+  if (!isStreamDebugEnabled()) return;
+  const record = {
+    ts: Date.now(),
+    protocol: state.wsProtocol || 'unknown',
+    runId: currentRunId || '',
+    sessionKey: currentSessionKey || '',
+    ...entry
+  };
+  streamDebugLogs.push(record);
+  if (streamDebugLogs.length > STREAM_DEBUG_MAX_LOGS) {
+    streamDebugLogs.splice(0, streamDebugLogs.length - STREAM_DEBUG_MAX_LOGS);
+  }
+  console.debug('[ChatClaw Stream Debug]', record);
+}
+
+function trackStreamChunk(source, text, meta = {}) {
+  if (!isStreamDebugEnabled()) return;
+  const preview = toDebugPreview(text);
+  if (!preview) return;
+  const runScope = currentRunId || 'no-run';
+  const sessionScope = currentSessionKey || 'no-session';
+  const fingerprint = `${runScope}:${sessionScope}:${preview}`;
+  const prev = streamChunkCounters.get(fingerprint);
+  if (!prev) {
+    streamChunkCounters.set(fingerprint, { count: 1, source });
+    return;
+  }
+  const count = prev.count + 1;
+  streamChunkCounters.set(fingerprint, { count, source });
+  pushStreamDebugLog({
+    kind: 'duplicate-chunk',
+    source,
+    previousSource: prev.source,
+    repeatCount: count,
+    textLength: typeof text === 'string' ? text.length : 0,
+    preview,
+    ...meta
+  });
+}
+
+function appendAgentResponseFromSource(source, text, meta = {}) {
+  if (!text) return;
+  const preview = toDebugPreview(text);
+  pushStreamDebugLog({
+    kind: 'append',
+    source,
+    textLength: text.length,
+    preview,
+    ...meta
+  });
+  trackStreamChunk(source, text, meta);
+  appendAgentResponse(text);
+}
+
+function clearOpenClawDeferredFinalize() {
+  if (!openClawDeferredFinalizeTimer) return;
+  clearTimeout(openClawDeferredFinalizeTimer);
+  openClawDeferredFinalizeTimer = null;
+}
+
+function scheduleOpenClawDeferredFinalize(reason, delayMs = 280) {
+  clearOpenClawDeferredFinalize();
+  openClawDeferredFinalizeTimer = setTimeout(() => {
+    openClawDeferredFinalizeTimer = null;
+    pushStreamDebugLog({ kind: 'deferred-finalize-fire', reason });
+    finalizeAgentResponse();
+  }, delayMs);
+  pushStreamDebugLog({ kind: 'deferred-finalize-set', reason, delayMs });
+}
+
+function resetFinalizedAgentSnapshot() {
+  lastFinalizedAgentMessageId = null;
+  lastFinalizedAgentContent = '';
+  lastFinalizedRunId = '';
+}
+
+function replaceLastAgentHistoryContent(content) {
+  const currentAgent = state.agents.find(a => a.id === state.currentAgentId);
+  if (!currentAgent || !Array.isArray(currentAgent.messages) || currentAgent.messages.length === 0) return false;
+  for (let i = currentAgent.messages.length - 1; i >= 0; i -= 1) {
+    const message = currentAgent.messages[i];
+    if (message?.role !== 'agent') continue;
+    currentAgent.messages[i] = {
+      ...message,
+      content,
+      timestamp: Date.now()
+    };
+    storage.set({ agents: state.agents });
+    return true;
+  }
+  return false;
+}
+
+function tryAttachLateOpenClawFullText(text, source, meta = {}) {
+  if (source !== 'openclaw-chat') return false;
+  const runId = typeof meta.runId === 'string' ? meta.runId : '';
+  if (!runId || runId !== lastFinalizedRunId) return false;
+  if (!lastFinalizedAgentMessageId || !lastFinalizedAgentContent) return false;
+  const msgEl = document.getElementById(lastFinalizedAgentMessageId);
+  if (!msgEl) return false;
+  if (text === lastFinalizedAgentContent) {
+    pushStreamDebugLog({ kind: 'append-skip', source, reason: 'late-same-as-finalized', ...meta });
+    return true;
+  }
+  if (lastFinalizedAgentContent.startsWith(text)) {
+    pushStreamDebugLog({ kind: 'append-skip', source, reason: 'late-shorter-than-finalized', ...meta });
+    return true;
+  }
+  if (!text.startsWith(lastFinalizedAgentContent)) return false;
+  currentStreamingMessageId = lastFinalizedAgentMessageId;
+  currentStreamingContent = lastFinalizedAgentContent;
+  currentStreamingReopenedFromFinalized = true;
+  const rest = text.slice(lastFinalizedAgentContent.length);
+  if (rest) {
+    appendAgentResponseFromSource(source, rest, { ...meta, appendMode: 'late-tail-reopen' });
+  }
+  return true;
+}
+
+if (typeof window !== 'undefined') {
+  window.chatclawStreamDebug = {
+    enable() {
+      localStorage.setItem(STREAM_DEBUG_STORAGE_KEY, '1');
+      return true;
+    },
+    disable() {
+      localStorage.removeItem(STREAM_DEBUG_STORAGE_KEY);
+      return true;
+    },
+    clear() {
+      streamDebugLogs.length = 0;
+      streamChunkCounters.clear();
+      return true;
+    },
+    dump() {
+      return streamDebugLogs.slice();
+    }
+  };
+}
 
 // DOM Elements
 const els = {
@@ -599,6 +764,15 @@ function handleWebSocketMessage(dataStr) {
     }
 
     const data = JSON.parse(dataStr);
+    pushStreamDebugLog({
+      kind: 'inbound',
+      dataType: String(data?.type || ''),
+      event: String(data?.event || ''),
+      seq: typeof data?.seq === 'number' ? data.seq : null,
+      id: data?.id ? String(data.id) : '',
+      status: String(data?.payload?.status || ''),
+      preview: toDebugPreview(extractContentText(data))
+    });
     // console.log('Parsed WS Message:', data);
 
     if (data.id && pendingRequests.has(data.id)) {
@@ -741,6 +915,7 @@ function handleOpenClawSocketMessage(data) {
 }
 
 function handleOpenClawChatEvent(payload) {
+  clearOpenClawDeferredFinalize();
   const phase = String(payload?.state || '').toLowerCase();
   const text = extractContentText(payload?.message || payload);
   const runId = typeof payload?.runId === 'string' ? payload.runId : '';
@@ -759,7 +934,7 @@ function handleOpenClawChatEvent(payload) {
     return;
   }
   if (phase === 'delta') {
-    if (text) appendFinalResponse(text);
+    if (text) appendFinalResponse(text, 'openclaw-chat', { phase, event: 'chat', runId });
     return;
   }
   if (phase === 'final' || phase === 'done' || phase === 'end') {
@@ -779,7 +954,7 @@ function handleOpenClawAgentEvent(payload) {
       return;
     }
     if (phase === 'end' || phase === 'done' || phase === 'final') {
-      finalizeAgentResponse();
+      scheduleOpenClawDeferredFinalize(`agent-lifecycle:${phase}`);
     }
   }
 }
@@ -835,7 +1010,10 @@ function isAgentStreamEvent(eventName) {
 function handleInlineContentMessage(data) {
   const content = extractContentText(data);
   if (!content) return false;
-  appendAgentResponse(content);
+  appendAgentResponseFromSource('inline-content', content, {
+    dataType: String(data?.type || ''),
+    event: String(data?.event || '')
+  });
   return true;
 }
 
@@ -1022,7 +1200,11 @@ function handleAgentStreamingEvent(data) {
   }
 
   if (delta) {
-    appendAgentResponse(delta);
+    appendAgentResponseFromSource(`stream:${String(eventName || '')}`, delta, {
+      phase,
+      stream,
+      seq: typeof data?.seq === 'number' ? data.seq : null
+    });
   }
 
   // Handle errors
@@ -1040,24 +1222,29 @@ function handleAgentStreamingEvent(data) {
   }
 }
 
-function appendFinalResponse(text) {
+function appendFinalResponse(text, source = 'final-response', meta = {}) {
   if (!text) return;
   if (!currentStreamingMessageId || !currentStreamingContent) {
-    appendAgentResponse(text);
+    if (tryAttachLateOpenClawFullText(text, source, meta)) {
+      return;
+    }
+    appendAgentResponseFromSource(source, text, { ...meta, appendMode: 'init' });
     return;
   }
   if (currentStreamingContent === text) {
+    pushStreamDebugLog({ kind: 'append-skip', source, reason: 'same-as-current', ...meta });
     return;
   }
   if (text.startsWith(currentStreamingContent)) {
     const rest = text.slice(currentStreamingContent.length);
-    if (rest) appendAgentResponse(rest);
+    if (rest) appendAgentResponseFromSource(source, rest, { ...meta, appendMode: 'tail-diff' });
     return;
   }
   if (currentStreamingContent.startsWith(text)) {
+    pushStreamDebugLog({ kind: 'append-skip', source, reason: 'current-has-text', ...meta });
     return;
   }
-  appendAgentResponse(text);
+  appendAgentResponseFromSource(source, text, { ...meta, appendMode: 'full-replace-fallback' });
 }
 
 let currentStreamingMessageId = null;
@@ -1081,6 +1268,7 @@ function resetFinalizeTimeout() {
 }
 
 function appendAgentResponse(text) {
+  clearOpenClawDeferredFinalize();
   if (state.optimizingPrompt) {
     state.optimizedPromptBuffer += text;
     resetFinalizeTimeout();
@@ -1114,6 +1302,7 @@ function appendAgentResponse(text) {
 }
 
 function finalizeAgentResponse() {
+  clearOpenClawDeferredFinalize();
   if (finalizeTimeout) {
     clearTimeout(finalizeTimeout);
     finalizeTimeout = null;
@@ -1134,9 +1323,19 @@ function finalizeAgentResponse() {
     return;
   }
 
+  const finalizedMessageId = currentStreamingMessageId;
+  const finalizedContent = currentStreamingContent;
+  const finalizedRunId = currentRunId || '';
   if (currentStreamingMessageId) {
     if (currentStreamingContent.trim()) {
-      saveMessageToHistory('agent', currentStreamingContent);
+      if (currentStreamingReopenedFromFinalized) {
+        const replaced = replaceLastAgentHistoryContent(currentStreamingContent);
+        if (!replaced) {
+          saveMessageToHistory('agent', currentStreamingContent);
+        }
+      } else {
+        saveMessageToHistory('agent', currentStreamingContent);
+      }
     } else {
       const msgEl = document.getElementById(currentStreamingMessageId);
       if (msgEl) msgEl.remove();
@@ -1144,8 +1343,17 @@ function finalizeAgentResponse() {
     currentStreamingMessageId = null;
     currentStreamingContent = '';
   }
+  if (finalizedContent.trim()) {
+    lastFinalizedAgentMessageId = finalizedMessageId;
+    lastFinalizedAgentContent = finalizedContent;
+    lastFinalizedRunId = finalizedRunId;
+  } else {
+    resetFinalizedAgentSnapshot();
+  }
   currentRunId = null;
   state.isTyping = false;
+  streamChunkCounters.clear();
+  currentStreamingReopenedFromFinalized = false;
 }
 
 function normalizeUrl(url) {
@@ -2016,8 +2224,18 @@ async function sendMessage() {
     console.log('[Sidebar] Sending message. Length:', text.length);
     const mergedMessage = buildChatSendMessage(text, payload.context, payload.context.attachment);
     const sessionKey = getCurrentSessionKey();
+    resetFinalizedAgentSnapshot();
+    currentStreamingReopenedFromFinalized = false;
+    clearOpenClawDeferredFinalize();
     currentSessionKey = sessionKey;
     currentRunId = null;
+    streamChunkCounters.clear();
+    pushStreamDebugLog({
+      kind: 'send',
+      sessionKey,
+      method: state.wsProtocol === AGENT_PROTOCOLS.OPENCLAW ? resolveOpenClawChatMethod() : 'chat.send',
+      userTextPreview: toDebugPreview(text)
+    });
     const wsPayload = (() => {
       if (state.wsProtocol === AGENT_PROTOCOLS.OPENCLAW) {
         const method = resolveOpenClawChatMethod();
