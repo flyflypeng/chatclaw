@@ -56,18 +56,21 @@
   // Initialize settings
   chrome.storage.local.get(['enableFloatBtn'], (result) => {
     isEnabled = result.enableFloatBtn !== false; // Default true
+    console.log('[ChatClaw ContentScript] Float button setting loaded:', isEnabled);
   });
 
   // Listen for setting changes
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.enableFloatBtn) {
       isEnabled = changes.enableFloatBtn.newValue;
+      console.log('[ChatClaw ContentScript] Float button setting changed to:', isEnabled);
       if (!isEnabled) hideButton();
     }
   });
 
   function createFloatButton() {
     if (floatHost) return;
+    console.log('[ChatClaw ContentScript] Creating float button UI.');
 
     // Create host
     floatHost = document.createElement('div');
@@ -110,9 +113,17 @@
   function handleBtnClick() {
     if (!currentSelection) return;
 
+    console.log('[ChatClaw ContentScript] Float button clicked. Sending selection to background:', currentSelection.substring(0, 30) + '...');
+
     chrome.runtime.sendMessage({
       action: 'open_sidebar',
       selection: currentSelection
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[ChatClaw ContentScript] Failed to send message to background:', chrome.runtime.lastError.message);
+      } else {
+        console.log('[ChatClaw ContentScript] Background message sent successfully.');
+      }
     });
 
     hideButton();
@@ -121,6 +132,8 @@
   function showButton(x, y) {
     if (!isEnabled) return;
     if (!floatHost) createFloatButton();
+
+    console.log('[ChatClaw ContentScript] Showing float button at:', x, y);
 
     if (floatBtn) {
       floatBtn.style.display = 'flex';
@@ -161,6 +174,7 @@
 
       if (text.length > 0) {
         currentSelection = text;
+        console.log('[ChatClaw ContentScript] Selection detected. Length:', text.length, 'Is form input:', isFormInput);
 
         let x, y;
 

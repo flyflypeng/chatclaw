@@ -24,22 +24,43 @@ const isExtensionEnv = typeof chrome !== 'undefined' && !!chrome?.storage?.local
 
 const storage = {
   async get(keys) {
-    if (isExtensionEnv) return chrome.storage.local.get(keys);
-    const raw = localStorage.getItem('mc_storage') || '{}';
-    const data = JSON.parse(raw);
-    if (Array.isArray(keys)) {
-      return keys.reduce((acc, k) => {
-        acc[k] = data[k];
-        return acc;
-      }, {});
+    if (isExtensionEnv) {
+      const result = await chrome.storage.local.get(keys);
+      if (chrome.runtime.lastError) {
+        console.error('[Sidebar Storage] Get error:', chrome.runtime.lastError);
+      }
+      return result;
     }
-    return data;
+    const raw = localStorage.getItem('mc_storage') || '{}';
+    try {
+      const data = JSON.parse(raw);
+      if (Array.isArray(keys)) {
+        return keys.reduce((acc, k) => {
+          acc[k] = data[k];
+          return acc;
+        }, {});
+      }
+      return data;
+    } catch (e) {
+      console.error('[Sidebar Storage] LocalStorage parse error:', e);
+      return {};
+    }
   },
   async set(values) {
-    if (isExtensionEnv) return chrome.storage.local.set(values);
+    if (isExtensionEnv) {
+      await chrome.storage.local.set(values);
+      if (chrome.runtime.lastError) {
+        console.error('[Sidebar Storage] Set error:', chrome.runtime.lastError);
+      }
+      return;
+    }
     const raw = localStorage.getItem('mc_storage') || '{}';
-    const data = JSON.parse(raw);
-    localStorage.setItem('mc_storage', JSON.stringify({ ...data, ...values }));
+    try {
+      const data = JSON.parse(raw);
+      localStorage.setItem('mc_storage', JSON.stringify({ ...data, ...values }));
+    } catch (e) {
+      console.error('[Sidebar Storage] LocalStorage parse/set error:', e);
+    }
   }
 };
 
@@ -163,19 +184,25 @@ const els = {
 // --- Initialization ---
 
 async function init() {
-  await loadSettings();
-  setupEventListeners();
+  console.log('[Sidebar] Initialization started.');
+  try {
+    await loadSettings();
+    setupEventListeners();
 
-  // Check for pending selection from content script
-  checkPendingSelection();
+    // Check for pending selection from content script
+    checkPendingSelection();
 
-  // Connect to the current agent
-  connectCurrentAgent();
+    // Connect to the current agent
+    connectCurrentAgent();
 
-  renderModelMenu();
+    renderModelMenu();
 
-  // Auto-focus input
-  els.userInput.focus();
+    // Auto-focus input
+    els.userInput.focus();
+    console.log('[Sidebar] Initialization complete.');
+  } catch (err) {
+    console.error('[Sidebar] Initialization failed:', err);
+  }
 }
 
 async function loadSettings() {
@@ -506,7 +533,7 @@ function connectCurrentAgent() {
 
       ws.onopen = async () => {
         opened = true;
-        console.log('WS Connected');
+        console.log('[Sidebar WS] Connected to:', candidateUrl);
         if (state.gatewayUrl !== candidateUrl) {
           state.gatewayUrl = candidateUrl;
           await persistCurrentAgentGateway(candidateUrl);
@@ -514,8 +541,9 @@ function connectCurrentAgent() {
       };
 
       ws.onclose = (e) => {
-        console.log('WS Closed', e.code, e.reason);
+        console.log(`[Sidebar WS] Connection closed. Code: ${e.code}, Reason: ${e.reason}`);
         if (!opened && attemptIndex < candidates.length - 1) {
+          console.log('[Sidebar WS] Connection failed, trying next candidate...');
           attemptIndex += 1;
           connectWithCandidate();
           return;
@@ -527,26 +555,29 @@ function connectCurrentAgent() {
         finalizeAgentResponse();
 
         if (wasConnected && !state.reconnectTimer) {
+          console.log('[Sidebar WS] Scheduling reconnect in 3 seconds...');
           state.reconnectTimer = setTimeout(() => {
             state.reconnectTimer = null;
+            console.log('[Sidebar WS] Attempting reconnect...');
             connectCurrentAgent();
           }, 3000);
         }
       };
 
       ws.onerror = (err) => {
-        console.error('WS Error', candidateUrl, err);
+        console.error('[Sidebar WS] WebSocket Error on', candidateUrl, err);
         updateConnectionStatus(false);
       };
 
       ws.onmessage = (e) => {
-        console.log('WS Message received:', e.data);
+        // Log is too noisy if we log every message content here
+        // console.log('WS Message received:', e.data);
         handleWebSocketMessage(e.data);
       };
 
       state.activeSocket = ws;
     } catch (err) {
-      console.error('Failed to create WebSocket:', candidateUrl, err);
+      console.error('[Sidebar WS] Failed to create WebSocket for', candidateUrl, err);
       if (attemptIndex < candidates.length - 1) {
         attemptIndex += 1;
         connectWithCandidate();
@@ -568,7 +599,7 @@ function handleWebSocketMessage(dataStr) {
     }
 
     const data = JSON.parse(dataStr);
-    console.log('Parsed WS Message:', data);
+    // console.log('Parsed WS Message:', data);
 
     if (data.id && pendingRequests.has(data.id)) {
       const request = pendingRequests.get(data.id);
@@ -1856,10 +1887,15 @@ function testAgentConnection(url, token, protocol = 'auto') {
 
 async function checkPendingSelection() {
   if (!isExtensionEnv) return;
-  const result = await chrome.storage.local.get('pendingSelection');
-  if (result.pendingSelection) {
-    appendSelectionToInput(result.pendingSelection);
-    chrome.storage.local.remove('pendingSelection');
+  try {
+    const result = await chrome.storage.local.get('pendingSelection');
+    if (result.pendingSelection) {
+      console.log('[Sidebar] Found pending selection, appending to input.');
+      appendSelectionToInput(result.pendingSelection);
+      chrome.storage.local.remove('pendingSelection');
+    }
+  } catch (err) {
+    console.error('[Sidebar] Error checking pending selection:', err);
   }
 }
 
@@ -1873,12 +1909,14 @@ function appendSelectionToInput(text) {
 
 async function togglePageContext() {
   if (state.pageContext) {
+    console.log('[Sidebar] Removing page context.');
     state.pageContext = null;
     els.addUrlBtn.classList.remove('active');
     els.addUrlBtn.setAttribute('data-tooltip', "添加此页元数据");
     els.addUrlBtn.removeAttribute('title');
   } else {
     try {
+      console.log('[Sidebar] Fetching active tab info for page context.');
       const tabs = await tabsApi.query({ active: true, currentWindow: true });
       if (tabs[0]) {
         let title = tabs[0].title;
@@ -1890,8 +1928,10 @@ async function togglePageContext() {
           if (response && response.context) {
             title = response.context.title || title;
             url = response.context.url || url;
+            console.log('[Sidebar] Page context enriched from content script.');
           }
         } catch (e) {
+          console.warn('[Sidebar] Content script not available for context, using basic tab info:', e.message);
           // Content script might not be loaded, use tab info
         }
 
@@ -1910,9 +1950,12 @@ async function togglePageContext() {
         resizeTextarea();
         updateSendButton();
         els.userInput.focus();
+        console.log('[Sidebar] Page context added successfully.');
+      } else {
+        console.warn('[Sidebar] No active tab found.');
       }
     } catch (err) {
-      console.error('Failed to get tab info:', err);
+      console.error('[Sidebar] Failed to get tab info:', err);
     }
   }
 }
@@ -1962,6 +2005,7 @@ async function sendMessage() {
 
   // Send via WebSocket
   try {
+    console.log('[Sidebar] Sending message. Length:', text.length);
     const mergedMessage = buildChatSendMessage(text, payload.context, payload.context.attachment);
     const sessionKey = getCurrentSessionKey();
     currentSessionKey = sessionKey;
@@ -1999,6 +2043,7 @@ async function sendMessage() {
     })();
     state.activeSocket.send(JSON.stringify(wsPayload));
     state.isTyping = true;
+    console.log(`[Sidebar] Message sent via ${state.wsProtocol} protocol.`);
 
     // Add Placeholder
     const agentMsgId = renderMessageToUI('agent', '');
@@ -2007,7 +2052,7 @@ async function sendMessage() {
     agentBubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
 
   } catch (err) {
-    console.error("Send failed", err);
+    console.error("[Sidebar] Send failed", err);
     renderMessageToUI('agent', `*Error sending message: ${err.message}*`);
   }
 }
@@ -2215,23 +2260,32 @@ async function handleFileSelect(e) {
   const file = e.target.files[0];
   if (!file) return;
 
+  console.log(`[Sidebar] File selected: ${file.name}, Type: ${file.type}, Size: ${file.size} bytes`);
+
   // Simple check for text files
   if (file.type.startsWith('text/') || file.name.match(/\.(txt|md|js|ts|py|json|html|css|csv)$/)) {
-    const text = await file.text();
-    state.attachment = {
-      name: file.name,
-      content: text.slice(0, 50000) // Limit size
-    };
-    els.attachBtn.classList.add('active');
-    els.attachBtn.setAttribute('data-tooltip', `已添加: ${file.name}`);
-    els.attachBtn.removeAttribute('title');
+    try {
+      const text = await file.text();
+      state.attachment = {
+        name: file.name,
+        content: text.slice(0, 50000) // Limit size
+      };
+      els.attachBtn.classList.add('active');
+      els.attachBtn.setAttribute('data-tooltip', `已添加: ${file.name}`);
+      els.attachBtn.removeAttribute('title');
 
-    // Auto-fill input if empty
-    if (!els.userInput.value.trim()) {
-      els.userInput.value = `Analyze this file: ${file.name}`;
-      updateSendButton();
+      // Auto-fill input if empty
+      if (!els.userInput.value.trim()) {
+        els.userInput.value = `Analyze this file: ${file.name}`;
+        updateSendButton();
+      }
+      console.log(`[Sidebar] File attached successfully. Content length: ${state.attachment.content.length}`);
+    } catch (err) {
+      console.error('[Sidebar] Failed to read file content:', err);
+      await showAlertDialog('错误', '读取文件失败，请重试。');
     }
   } else {
+    console.warn(`[Sidebar] Unsupported file type: ${file.type}`);
     await showAlertDialog('提示', 'Only text files are supported for now.');
     els.fileInput.value = '';
   }
