@@ -1516,11 +1516,13 @@ async function loadAndRenderSessions() {
     }
 
     els.sessionsList.innerHTML = sessions.map(s => {
-      const updatedAt = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : '';
+      const sessionKey = s.key || s.sessionKey || s.session_key || '';
+      const updatedAtValue = s.updatedAt || s.last_message_time || '';
+      const updatedAt = updatedAtValue ? new Date(updatedAtValue).toLocaleString() : '';
       return `
-        <div class="session-item" data-key="${escapeHtml(s.key || s.sessionKey || '')}">
+        <div class="session-item" data-key="${escapeHtml(sessionKey)}">
           <div class="session-info">
-            <div class="session-key" title="${escapeHtml(s.key || s.sessionKey || '')}">${escapeHtml(s.key || s.sessionKey || 'Unknown Session')}</div>
+            <div class="session-key" title="${escapeHtml(sessionKey)}">${escapeHtml(sessionKey || 'Unknown Session')}</div>
             <div class="session-time">${updatedAt}</div>
           </div>
           <button class="delete-session-btn" title="删除会话">&times;</button>
