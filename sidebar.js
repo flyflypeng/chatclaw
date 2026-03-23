@@ -95,6 +95,7 @@ const els = {
   userInput: document.getElementById('user-input'),
   sendBtn: document.getElementById('send-btn'),
   settingsBtn: document.getElementById('settings-btn'),
+  newSessionBtn: document.getElementById('new-session-btn'),
   settingsModal: document.getElementById('settings-modal'),
   closeSettingsBtn: document.getElementById('close-settings'),
   gatewayInput: document.getElementById('gateway-url'),
@@ -276,6 +277,10 @@ function setupEventListeners() {
   if (els.attachBtn) {
     els.attachBtn.addEventListener('click', () => els.fileInput.click());
     els.fileInput.addEventListener('change', handleFileSelect);
+  }
+
+  if (els.newSessionBtn) {
+    els.newSessionBtn.addEventListener('click', startNewSession);
   }
 
   // Prompts Management
@@ -564,10 +569,6 @@ function handleWebSocketMessage(dataStr) {
       return;
     }
 
-    // Assume protocol: { type: 'content' | 'error' | 'done', content: '...' }
-    // MicroClaw might send: { type: "content", content: "..." }
-
-    // Check if it's an array of messages
     if (Array.isArray(data)) {
       for (const item of data) {
         if (item.type === 'content' || item.type === 'message') {
@@ -579,65 +580,62 @@ function handleWebSocketMessage(dataStr) {
       return;
     }
 
-    const content = extractContentText(data);
-
-    if (data.type === 'content' || data.type === 'message') {
-      appendAgentResponse(content);
-    } else if (data.type === 'res' && (data.id === pendingConnectRequestId || data.id === 'connect') && data.ok) {
-      pendingConnectRequestId = null;
-      state.wsProtocol = pendingConnectProtocol || AGENT_PROTOCOLS.OPENCLAW;
-      pendingConnectProtocol = null;
-      updateConnectionStatus(true);
-      const issuedDeviceToken = data?.payload?.auth?.deviceToken;
-      if (typeof issuedDeviceToken === 'string' && issuedDeviceToken.trim()) {
-        saveCurrentAgentDeviceToken(issuedDeviceToken.trim());
-      }
-      console.log('Handshake successful');
-    } else if (data.type === 'event' && isChatEventName(data.event)) {
-      handleChatEvent(data.event, data.payload);
-    } else if (data.type === 'event' && data.event === 'agent') {
-      handleAgentEvent(data.payload);
-    } else if (data.type === 'event' && data.event === 'connect.challenge') {
-      console.log('Responding to connect.challenge');
-      const nonce = typeof data?.payload?.nonce === 'string' ? data.payload.nonce : '';
-      if (!nonce) return;
-      sendConnectRequest(nonce, resolveHandshakeProtocol(state.preferredProtocol));
-    } else if (data.type === 'res' && (data.id === pendingConnectRequestId || data.id === 'connect') && !data.ok) {
-      pendingConnectRequestId = null;
-      pendingConnectProtocol = null;
-      const errorMessage = data.error?.message || 'Handshake failed';
-      updateConnectionStatus(false);
-      if (!shouldSuppressInitialAuthError(data.error)) {
+    if (data.type === 'res') {
+      if ((data.id === pendingConnectRequestId || data.id === 'connect')) {
+        if (data.ok) {
+          pendingConnectRequestId = null;
+          state.wsProtocol = pendingConnectProtocol || AGENT_PROTOCOLS.OPENCLAW;
+          pendingConnectProtocol = null;
+          updateConnectionStatus(true);
+          const issuedDeviceToken = data?.payload?.auth?.deviceToken;
+          if (typeof issuedDeviceToken === 'string' && issuedDeviceToken.trim()) {
+            saveCurrentAgentDeviceToken(issuedDeviceToken.trim());
+          }
+          console.log('Handshake successful');
+        } else {
+          pendingConnectRequestId = null;
+          pendingConnectProtocol = null;
+          const errorMessage = data.error?.message || 'Handshake failed';
+          updateConnectionStatus(false);
+          if (!shouldSuppressInitialAuthError(data.error)) {
+            appendAgentResponse(`\n*[Error: ${errorMessage}]*`);
+            finalizeAgentResponse();
+          }
+        }
+      } else if (data.ok === false) {
+        const errorMessage = data.error?.message || 'Request failed';
         appendAgentResponse(`\n*[Error: ${errorMessage}]*`);
         finalizeAgentResponse();
-      }
-    } else if (data.type === 'res' && data.id && String(data.id).startsWith('chat-') && data.ok) {
-      const chatContent = extractContentText(data.payload || {});
-      if (chatContent) {
-        appendAgentResponse(chatContent);
-      }
-      if (chatContent) {
+      } else if (data.id && (String(data.id).startsWith('chat-') || String(data.id).startsWith('req-'))) {
+        const status = String(data?.payload?.status || '').toLowerCase();
+        if (status && (status === 'started' || status === 'accepted' || status === 'queued' || status === 'pending' || status === 'running')) {
+          return;
+        }
         finalizeAgentResponse();
       }
-    } else if (data.type === 'res' && data.ok === false) {
-      const errorMessage = data.error?.message || 'Request failed';
-      appendAgentResponse(`\n*[Error: ${errorMessage}]*`);
-      finalizeAgentResponse();
+    } else if (data.type === 'event') {
+      if (data.event === 'connect.challenge') {
+        const nonce = typeof data?.payload?.nonce === 'string' ? data.payload.nonce : '';
+        if (nonce) {
+          sendConnectRequest(nonce, resolveHandshakeProtocol(state.preferredProtocol));
+        }
+      } else if (String(data.event).startsWith('chat') || String(data.event).startsWith('session') || data.event === 'agent') {
+        handleAgentStreamingEvent(data);
+      }
+    } else if (data.type === 'ping') {
+      state.activeSocket.send(JSON.stringify({ type: 'pong' }));
     } else if (data.type === 'error') {
       appendAgentResponse(`\n*[Error: ${data.message || 'Unknown error'}]*`);
       finalizeAgentResponse();
+    } else if (data.type === 'content' || data.type === 'message') {
+      const content = extractContentText(data);
+      if (content) appendAgentResponse(content);
     } else if (data.type === 'done' || data.type === 'end') {
       finalizeAgentResponse();
-    } else if (data.type === 'ping') {
-      state.activeSocket.send(JSON.stringify({ type: 'pong' }));
-    } else if (content) {
-      // Fallback: if there's content but no recognized type, append it
-      appendAgentResponse(content);
     }
 
   } catch (err) {
     console.warn('Failed to parse WS message:', err);
-    // If parsing fails but it's not strictly JSON starting with {
     if (typeof dataStr === 'string') {
       appendAgentResponse(dataStr);
       resetFinalizeTimeout();
@@ -661,35 +659,78 @@ function isUnauthorizedError(error) {
 
 function extractContentText(data) {
   if (!data || typeof data !== 'object') return '';
-  const direct = data.content || data.text || data.delta || data.final || data.response || '';
-  if (typeof direct === 'string' && direct) return direct;
-  if (Array.isArray(direct)) {
-    const directArrayText = extractTextFromContentBlocks(direct);
-    if (directArrayText) return directArrayText;
-  }
+  const microClawText = extractMicroClawContentText(data);
+  if (microClawText) return microClawText;
+  const openClawText = extractOpenClawContentText(data);
+  if (openClawText) return openClawText;
+  return extractMinimalFallbackText(data);
+}
 
-  if (data.message) {
-    if (typeof data.message === 'string') return data.message;
-    if (typeof data.message === 'object') {
-      const messageText = extractContentText(data.message);
-      if (messageText) return messageText;
-    }
-  }
-
+function extractMicroClawContentText(data) {
+  const directMessageText = extractMicroClawMessageText(data.message);
+  if (directMessageText) return directMessageText;
   const payload = data.payload && typeof data.payload === 'object' ? data.payload : null;
   if (!payload) return '';
-  const payloadText = payload.content || payload.message || payload.text || payload.delta || payload.final || payload.response || '';
-  if (typeof payloadText === 'string' && payloadText) return payloadText;
-  if (Array.isArray(payloadText)) {
-    const payloadArrayText = extractTextFromContentBlocks(payloadText);
-    if (payloadArrayText) return payloadArrayText;
-  }
+  const payloadMessageText = extractMicroClawMessageText(payload.message);
+  if (payloadMessageText) return payloadMessageText;
+  return extractMicroClawMessageText(payload);
+}
 
-  if (Array.isArray(payload.blocks)) {
-    const blocksText = extractTextFromContentBlocks(payload.blocks);
-    if (blocksText) return blocksText;
-  }
+function extractMicroClawMessageText(message) {
+  if (!message) return '';
+  if (typeof message === 'string') return message;
+  if (typeof message !== 'object') return '';
+  if (typeof message.content === 'string') return message.content;
+  if (Array.isArray(message.content)) return extractTextFromContentBlocks(message.content);
+  return '';
+}
 
+function extractOpenClawContentText(data) {
+  const directText =
+    extractTextLikeValue(data.delta) ||
+    extractTextLikeValue(data.data?.delta) ||
+    extractTextLikeValue(data.text) ||
+    extractTextLikeValue(data.content) ||
+    extractTextLikeValue(data.response) ||
+    extractTextLikeValue(data.final);
+  if (directText) return directText;
+  const payload = data.payload && typeof data.payload === 'object' ? data.payload : null;
+  if (!payload) return '';
+  return (
+    extractTextLikeValue(payload.delta) ||
+    extractTextLikeValue(payload.data?.delta) ||
+    extractTextLikeValue(payload.text) ||
+    extractTextLikeValue(payload.content) ||
+    extractTextLikeValue(payload.response) ||
+    extractTextLikeValue(payload.final) ||
+    ''
+  );
+}
+
+function extractMinimalFallbackText(data) {
+  const direct =
+    extractTextLikeValue(data.message) ||
+    extractTextLikeValue(data.text) ||
+    extractTextLikeValue(data.content);
+  if (direct) return direct;
+  const payload = data.payload && typeof data.payload === 'object' ? data.payload : null;
+  if (!payload) return '';
+  return (
+    extractTextLikeValue(payload.message) ||
+    extractTextLikeValue(payload.text) ||
+    extractTextLikeValue(payload.content) ||
+    ''
+  );
+}
+
+function extractTextLikeValue(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return extractTextFromContentBlocks(value);
+  if (typeof value !== 'object') return '';
+  if (typeof value.text === 'string') return value.text;
+  if (typeof value.content === 'string') return value.content;
+  if (Array.isArray(value.content)) return extractTextFromContentBlocks(value.content);
   return '';
 }
 
@@ -743,113 +784,48 @@ function isMatchingSessionKey(payloadSessionKey) {
   return incoming === current;
 }
 
-function appendStreamingEventText({ deltaText = '', fullText = '' }) {
-  const delta = typeof deltaText === 'string' ? deltaText : '';
+function handleAgentStreamingEvent(data) {
+  const eventName = data.event || '';
+  const payload = data.payload || {};
+
+  if (payload.sessionKey && !isMatchingSessionKey(payload.sessionKey)) {
+    return;
+  }
+
+  const phase = String(payload.state || payload.phase || payload.status || (payload.data && payload.data.phase) || '').toLowerCase();
+  const stream = String(payload.stream || '');
+
+  // Extract delta text
+  let delta = '';
+  if (phase === 'delta') {
+    delta = extractContentText(payload);
+  } else if (payload.delta) {
+    delta = extractContentText(payload.delta);
+  } else if (payload.data && payload.data.delta) {
+    delta = extractContentText(payload.data.delta);
+  } else if (eventName.endsWith('.delta') || eventName.endsWith(':delta')) {
+    delta = extractContentText(payload);
+  } else if (eventName === 'chat' && phase !== 'final' && phase !== 'error') {
+    // Fallback for chat events without explicit delta phase
+    delta = extractContentText(payload);
+  }
+
   if (delta) {
     appendAgentResponse(delta);
-    return;
   }
 
-  const full = typeof fullText === 'string' ? fullText : '';
-  if (!full) return;
-  if (!currentStreamingContent) {
-    appendAgentResponse(full);
-    return;
-  }
-  if (full === currentStreamingContent) return;
-  if (full.startsWith(currentStreamingContent)) {
-    const rest = full.slice(currentStreamingContent.length);
-    if (rest) appendAgentResponse(rest);
-    return;
-  }
-  if (currentStreamingContent.startsWith(full)) return;
-  appendAgentResponse(full);
-}
-
-function handleChatEvent(eventName, payload) {
-  if (payload && payload.sessionKey && !isMatchingSessionKey(payload.sessionKey)) {
-    return;
-  }
-
-  const text = extractContentText(payload || {});
-  const phase = payload?.state || payload?.phase || '';
-  if (eventName === 'chat') {
-    if (phase === 'final') {
-      appendFinalResponse(text);
-      finalizeAgentResponse();
-      return;
-    }
-    if (phase === 'error') {
-      const message = text || payload?.error?.message || payload?.message || 'Unknown error';
-      appendAgentResponse(`\n*[Error: ${message}]*`);
-      finalizeAgentResponse();
-      return;
-    }
-    if (text || payload?.delta) {
-      appendStreamingEventText({
-        deltaText: extractContentText(payload?.delta),
-        fullText: text
-      });
-      return;
-    }
-  }
-
-  if (eventName.endsWith('.delta') || eventName.endsWith(':delta')) {
-    if (text) appendAgentResponse(text);
-    return;
-  }
-
-  if (eventName.endsWith('.final') || eventName.endsWith(':final')) {
-    appendFinalResponse(text);
-    finalizeAgentResponse();
-    return;
-  }
-
-  if (eventName.endsWith('.error') || eventName.endsWith(':error')) {
-    const message = text || payload?.error?.message || payload?.message || 'Unknown error';
+  // Handle errors
+  if (phase === 'error' || eventName.endsWith('.error') || stream === 'error') {
+    const message = payload.error?.message || payload.message || extractContentText(payload.data) || 'Unknown error';
     appendAgentResponse(`\n*[Error: ${message}]*`);
     finalizeAgentResponse();
     return;
   }
 
-  if (text) {
-    appendStreamingEventText({ fullText: text });
-  }
-}
-
-function handleAgentEvent(payload) {
-  if (!payload || typeof payload !== 'object') return;
-  if (payload.sessionKey && !isMatchingSessionKey(payload.sessionKey)) return;
-
-  const stream = String(payload.stream || '');
-  const data = payload.data && typeof payload.data === 'object' ? payload.data : {};
-
-  if (stream === 'assistant') {
-    appendStreamingEventText({
-      deltaText: extractContentText(data.delta),
-      fullText: extractContentText(data)
-    });
-    return;
-  }
-
-  if (stream === 'error') {
-    const message = extractContentText(data) || payload?.error?.message || payload?.message || 'Unknown error';
-    appendAgentResponse(`\n*[Error: ${message}]*`);
+  // Handle final/completion
+  // Note: We intentionally ignore the final full text to avoid duplication with the streamed delta.
+  if (phase === 'final' || phase === 'finish' || phase === 'finished' || phase === 'complete' || phase === 'completed' || phase === 'done' || phase === 'end' || phase === 'ended' || eventName.endsWith('.final') || eventName.endsWith(':final')) {
     finalizeAgentResponse();
-    return;
-  }
-
-  if (stream === 'lifecycle') {
-    const phase = String(data.phase || '').toLowerCase();
-    if (phase === 'error') {
-      const message = extractContentText(data) || payload?.error?.message || payload?.message || 'Unknown error';
-      appendAgentResponse(`\n*[Error: ${message}]*`);
-      finalizeAgentResponse();
-      return;
-    }
-    if (phase === 'final' || phase === 'finish' || phase === 'finished' || phase === 'complete' || phase === 'completed' || phase === 'done' || phase === 'end' || phase === 'ended') {
-      finalizeAgentResponse();
-    }
   }
 }
 
@@ -940,8 +916,12 @@ function finalizeAgentResponse() {
   }
 
   if (currentStreamingMessageId) {
-    // Save to history
-    saveMessageToHistory('agent', currentStreamingContent);
+    if (currentStreamingContent.trim()) {
+      saveMessageToHistory('agent', currentStreamingContent);
+    } else {
+      const msgEl = document.getElementById(currentStreamingMessageId);
+      if (msgEl) msgEl.remove();
+    }
     currentStreamingMessageId = null;
     currentStreamingContent = '';
   }
@@ -1199,8 +1179,30 @@ async function sendConnectRequest(nonce, protocol = AGENT_PROTOCOLS.OPENCLAW) {
 function getCurrentSessionKey() {
   const current = state.agents.find(a => a.id === state.currentAgentId);
   if (!current) return 'chatclaw';
-  const base = current.name || current.id || 'chatclaw';
-  return `chatclaw:${base}`.replace(/[^\w:-]/g, '-');
+
+  if (!current.sessionKey) {
+    const base = current.name || current.id || 'chatclaw';
+    current.sessionKey = `chatclaw:${base}`.replace(/[^\w:-]/g, '-');
+    storage.set({ agents: state.agents });
+  }
+  return current.sessionKey;
+}
+
+function startNewSession() {
+  const current = state.agents.find(a => a.id === state.currentAgentId);
+  if (!current) return;
+
+  current.sessionKey = `chatclaw:session:${crypto.randomUUID()}`;
+  current.messages = [];
+  storage.set({ agents: state.agents });
+
+  els.chatContainer.innerHTML = '';
+  if (els.home) els.home.classList.remove('hidden');
+
+  els.userInput.value = '';
+  els.userInput.focus();
+  resizeTextarea();
+  updateSendButton();
 }
 
 function buildChatSendMessage(text, context, attachment) {
@@ -1664,21 +1666,36 @@ async function sendMessage() {
     const mergedMessage = buildChatSendMessage(text, payload.context, payload.context.attachment);
     const sessionKey = getCurrentSessionKey();
     currentSessionKey = sessionKey;
-    const wsPayload = (state.wsProtocol === AGENT_PROTOCOLS.OPENCLAW || state.wsProtocol === AGENT_PROTOCOLS.MICROCLAW)
-      ? {
-        type: 'req',
-        id: makeRequestId('chat'),
-        method: 'chat.send',
-        params: {
-          sessionKey,
-          message: mergedMessage,
-          idempotencyKey: makeRequestId('idem')
-        }
+    const wsPayload = (() => {
+      if (state.wsProtocol === AGENT_PROTOCOLS.OPENCLAW) {
+        return {
+          type: 'req',
+          id: makeRequestId('chat'),
+          method: 'sessions.send',
+          params: {
+            sessionKey,
+            message: mergedMessage,
+            idempotencyKey: makeRequestId('idem')
+          }
+        };
+      } else if (state.wsProtocol === AGENT_PROTOCOLS.MICROCLAW) {
+        return {
+          type: 'req',
+          id: makeRequestId('chat'),
+          method: 'chat.send',
+          params: {
+            sessionKey,
+            message: mergedMessage,
+            idempotencyKey: makeRequestId('idem')
+          }
+        };
+      } else {
+        return {
+          type: 'message',
+          payload: payload
+        };
       }
-      : {
-        type: 'message',
-        payload: payload
-      };
+    })();
     state.activeSocket.send(JSON.stringify(wsPayload));
     state.isTyping = true;
 
@@ -1755,18 +1772,15 @@ function renderMarkdown(element, text) {
     return;
   }
 
-  // Preprocess text to prevent tags like #PARA/Resource from being treated as headers
-  // Replaces # followed by non-space characters with its HTML entity &#35;
-  let processedText = text.replace(/(^|\s)#([^\s#]+)/g, '$1&#35;$2');
+  const decodedText = decodeCommonEntities(text);
+  const processedText = decodedText;
 
-  // If text contains Markdown syntax and marked is loaded, use it
-  if (isMarkdown(text)) {
+  if (isMarkdown(decodedText)) {
     element.innerHTML = marked.parse(processedText);
     return;
   }
 
-  // Fallback to simple default rendering for plain text
-  let html = escapeHtml(text);
+  let html = escapeHtml(decodedText);
 
   // Bold
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -1784,6 +1798,13 @@ function renderMarkdown(element, text) {
   html = html.replace(/\n/g, '<br>');
 
   element.innerHTML = html;
+}
+
+function decodeCommonEntities(text) {
+  if (!text) return '';
+  return text
+    .replace(/&#35;/g, '#')
+    .replace(/&amp;#35;/g, '#');
 }
 
 function escapeHtml(text) {
