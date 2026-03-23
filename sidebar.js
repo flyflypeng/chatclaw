@@ -1411,7 +1411,8 @@ function getCurrentSessionKey() {
 
   if (!current.sessionKey) {
     const base = current.name || current.id || 'chatclaw';
-    current.sessionKey = `chatclaw:${base}`.replace(/[^\w:-]/g, '-');
+    const protocol = state.wsProtocol || 'unknown';
+    current.sessionKey = `chatclaw:${protocol}:${base}:session:${crypto.randomUUID()}`.replace(/[^\w:-]/g, '-');
     storage.set({ agents: state.agents });
   }
   return current.sessionKey;
@@ -1421,7 +1422,9 @@ function startNewSession() {
   const current = state.agents.find(a => a.id === state.currentAgentId);
   if (!current) return;
 
-  current.sessionKey = `chatclaw:session:${crypto.randomUUID()}`;
+  const base = current.name || current.id || 'chatclaw';
+  const protocol = state.wsProtocol || 'unknown';
+  current.sessionKey = `chatclaw:${protocol}:${base}:session:${crypto.randomUUID()}`.replace(/[^\w:-]/g, '-');
   current.messages = [];
   storage.set({ agents: state.agents });
 
