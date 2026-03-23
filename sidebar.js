@@ -7,6 +7,12 @@ import { marked } from 'marked';
 
 const DEFAULT_GATEWAY = 'ws://127.0.0.1:10961';
 const PROTOCOL_VERSION = 3;
+const AGENT_PROTOCOLS = {
+  AUTO: 'auto',
+  OPENCLAW: 'openclaw',
+  MICROCLAW: 'microclaw',
+  LEGACY: 'legacy'
+};
 // WebSocket Protocol Endpoints/Message Types
 const WS_TYPES = {
   CHAT: 'message',
@@ -57,7 +63,7 @@ let state = {
   apiToken: '',
   showThought: false,
   connected: false,
-  wsProtocol: 'legacy',
+  wsProtocol: AGENT_PROTOCOLS.MICROCLAW,
   pageContext: null,
   attachment: null,
   prompts: [],
@@ -77,6 +83,7 @@ let state = {
 };
 
 let pendingConnectRequestId = null;
+let pendingConnectProtocol = null;
 let currentSessionKey = null;
 let recentEventKeys = [];
 const recentEventKeySet = new Set();
@@ -211,7 +218,7 @@ function updateCurrentAgentState() {
     state.gatewayUrl = normalizeUrl(current.url);
     state.apiToken = current.token || '';
     state.showThought = !!current.showThought;
-    state.preferredProtocol = current.protocol || 'auto';
+    state.preferredProtocol = normalizeAgentProtocol(current.protocol || AGENT_PROTOCOLS.AUTO);
     if (els.currentModelName) els.currentModelName.textContent = current.name;
   }
 }
@@ -480,12 +487,12 @@ function connectCurrentAgent() {
       console.log('Connecting to:', candidateUrl);
       const ws = new WebSocket(candidateUrl);
       pendingConnectRequestId = null;
-      state.wsProtocol = 'legacy';
+      pendingConnectProtocol = null;
+      state.wsProtocol = AGENT_PROTOCOLS.MICROCLAW;
 
       ws.onopen = async () => {
         opened = true;
         console.log('WS Connected');
-        updateConnectionStatus(true);
         if (state.gatewayUrl !== candidateUrl) {
           state.gatewayUrl = candidateUrl;
           await persistCurrentAgentGateway(candidateUrl);
@@ -578,7 +585,9 @@ function handleWebSocketMessage(dataStr) {
       appendAgentResponse(content);
     } else if (data.type === 'res' && (data.id === pendingConnectRequestId || data.id === 'connect') && data.ok) {
       pendingConnectRequestId = null;
-      state.wsProtocol = 'openclaw';
+      state.wsProtocol = pendingConnectProtocol || AGENT_PROTOCOLS.OPENCLAW;
+      pendingConnectProtocol = null;
+      updateConnectionStatus(true);
       const issuedDeviceToken = data?.payload?.auth?.deviceToken;
       if (typeof issuedDeviceToken === 'string' && issuedDeviceToken.trim()) {
         saveCurrentAgentDeviceToken(issuedDeviceToken.trim());
@@ -589,13 +598,13 @@ function handleWebSocketMessage(dataStr) {
     } else if (data.type === 'event' && data.event === 'agent') {
       handleAgentEvent(data.payload);
     } else if (data.type === 'event' && data.event === 'connect.challenge') {
-      if (state.preferredProtocol === 'legacy') return;
       console.log('Responding to connect.challenge');
       const nonce = typeof data?.payload?.nonce === 'string' ? data.payload.nonce : '';
       if (!nonce) return;
-      sendConnectRequest(nonce);
+      sendConnectRequest(nonce, resolveHandshakeProtocol(state.preferredProtocol));
     } else if (data.type === 'res' && (data.id === pendingConnectRequestId || data.id === 'connect') && !data.ok) {
       pendingConnectRequestId = null;
+      pendingConnectProtocol = null;
       const errorMessage = data.error?.message || 'Handshake failed';
       updateConnectionStatus(false);
       if (!shouldSuppressInitialAuthError(data.error)) {
@@ -957,6 +966,20 @@ function normalizeUrl(url) {
   return trimmed;
 }
 
+function normalizeAgentProtocol(protocol) {
+  if (protocol === AGENT_PROTOCOLS.OPENCLAW) return AGENT_PROTOCOLS.OPENCLAW;
+  if (protocol === AGENT_PROTOCOLS.MICROCLAW || protocol === AGENT_PROTOCOLS.LEGACY) {
+    return AGENT_PROTOCOLS.MICROCLAW;
+  }
+  return AGENT_PROTOCOLS.AUTO;
+}
+
+function resolveHandshakeProtocol(protocol) {
+  const normalized = normalizeAgentProtocol(protocol);
+  if (normalized === AGENT_PROTOCOLS.AUTO) return AGENT_PROTOCOLS.OPENCLAW;
+  return normalized;
+}
+
 function getGatewayCandidates(url) {
   const primary = normalizeUrl(url);
   const candidates = [primary];
@@ -1133,17 +1156,31 @@ async function buildOpenClawConnectParams({ token, nonce, deviceToken }) {
   };
 }
 
-async function sendConnectRequest(nonce) {
+function buildMicroClawConnectParams({ token }) {
+  const authToken = typeof token === 'string' ? token.trim() : '';
+  return {
+    minProtocol: PROTOCOL_VERSION,
+    maxProtocol: PROTOCOL_VERSION,
+    auth: authToken ? { token: authToken } : {}
+  };
+}
+
+async function sendConnectRequest(nonce, protocol = AGENT_PROTOCOLS.OPENCLAW) {
   if (!state.activeSocket || state.activeSocket.readyState !== WebSocket.OPEN) return;
   const requestId = makeRequestId('connect');
+  const handshakeProtocol = protocol === AGENT_PROTOCOLS.OPENCLAW ? AGENT_PROTOCOLS.OPENCLAW : AGENT_PROTOCOLS.MICROCLAW;
   pendingConnectRequestId = requestId;
-  state.wsProtocol = 'openclaw';
+  pendingConnectProtocol = handshakeProtocol;
   try {
-    const params = await buildOpenClawConnectParams({
-      token: state.apiToken || '',
-      nonce,
-      deviceToken: getCurrentAgentDeviceToken()
-    });
+    const params = handshakeProtocol === AGENT_PROTOCOLS.OPENCLAW
+      ? await buildOpenClawConnectParams({
+        token: state.apiToken || '',
+        nonce,
+        deviceToken: getCurrentAgentDeviceToken()
+      })
+      : buildMicroClawConnectParams({
+        token: state.apiToken || ''
+      });
     state.activeSocket.send(JSON.stringify({
       type: 'req',
       id: requestId,
@@ -1152,6 +1189,7 @@ async function sendConnectRequest(nonce) {
     }));
   } catch (err) {
     pendingConnectRequestId = null;
+    pendingConnectProtocol = null;
     const errorMessage = err instanceof Error ? err.message : 'Failed to build connect params';
     appendAgentResponse(`\n*[Error: ${errorMessage}]*`);
     finalizeAgentResponse();
@@ -1263,9 +1301,9 @@ function renderAgentList() {
       <div class="field-group">
         <label class="field-label">Protocol</label>
         <select class="field-input agent-protocol">
-          <option value="auto" ${(!agent.protocol || agent.protocol === 'auto') ? 'selected' : ''}>Auto-detect</option>
-          <option value="openclaw" ${agent.protocol === 'openclaw' ? 'selected' : ''}>OpenClaw</option>
-          <option value="legacy" ${agent.protocol === 'legacy' ? 'selected' : ''}>Legacy</option>
+          <option value="auto" ${(normalizeAgentProtocol(agent.protocol || AGENT_PROTOCOLS.AUTO) === AGENT_PROTOCOLS.AUTO) ? 'selected' : ''}>Auto-detect</option>
+          <option value="openclaw" ${(normalizeAgentProtocol(agent.protocol) === AGENT_PROTOCOLS.OPENCLAW) ? 'selected' : ''}>OpenClaw</option>
+          <option value="microclaw" ${(normalizeAgentProtocol(agent.protocol) === AGENT_PROTOCOLS.MICROCLAW) ? 'selected' : ''}>MicroClaw</option>
         </select>
       </div>
 
@@ -1301,7 +1339,7 @@ async function saveAgentFromCard(id, card) {
   const name = nameInput.value.trim();
   let url = urlInput.value.trim();
   const token = tokenInput.value.trim();
-  const protocol = protocolInput ? protocolInput.value : 'auto';
+  const protocol = normalizeAgentProtocol(protocolInput ? protocolInput.value : AGENT_PROTOCOLS.AUTO);
   const showThought = !!showThoughtInput?.checked;
 
   // URL Validation
@@ -1367,7 +1405,7 @@ async function connectAgentFromCard(id, card) {
 
   let url = card.querySelector('.agent-url').value.trim();
   const token = card.querySelector('.agent-token').value.trim();
-  const protocol = card.querySelector('.agent-protocol') ? card.querySelector('.agent-protocol').value : 'auto';
+  const protocol = normalizeAgentProtocol(card.querySelector('.agent-protocol') ? card.querySelector('.agent-protocol').value : AGENT_PROTOCOLS.AUTO);
 
   // Temp normalize for test
   url = normalizeUrl(url);
@@ -1436,6 +1474,7 @@ function testAgentConnection(url, token, protocol = 'auto') {
       let connectTimer = null;
       let connectSent = false;
       const connectRequestId = makeRequestId('connect-test');
+      const normalizedProtocol = normalizeAgentProtocol(protocol);
 
       const settle = (result) => {
         if (resolved) return;
@@ -1452,7 +1491,7 @@ function testAgentConnection(url, token, protocol = 'auto') {
       }, 5000);
 
       ws.onopen = () => {
-        if (protocol === 'openclaw') return;
+        if (normalizedProtocol === AGENT_PROTOCOLS.AUTO || normalizedProtocol === AGENT_PROTOCOLS.OPENCLAW || normalizedProtocol === AGENT_PROTOCOLS.MICROCLAW) return;
         connectTimer = setTimeout(() => {
           settle({ ok: true });
         }, 800);
@@ -1466,14 +1505,19 @@ function testAgentConnection(url, token, protocol = 'auto') {
           return;
         }
         if (data?.type === 'event' && data?.event === 'connect.challenge') {
-          if (protocol === 'legacy' || connectSent) return;
+          if (connectSent) return;
           const nonce = typeof data?.payload?.nonce === 'string' ? data.payload.nonce : '';
           if (!nonce) return;
           try {
-            const params = await buildOpenClawConnectParams({
-              token: token || '',
-              nonce
-            });
+            const handshakeProtocol = resolveHandshakeProtocol(normalizedProtocol);
+            const params = handshakeProtocol === AGENT_PROTOCOLS.OPENCLAW
+              ? await buildOpenClawConnectParams({
+                token: token || '',
+                nonce
+              })
+              : buildMicroClawConnectParams({
+                token: token || ''
+              });
             ws.send(JSON.stringify({
               type: 'req',
               id: connectRequestId,
@@ -1620,7 +1664,7 @@ async function sendMessage() {
     const mergedMessage = buildChatSendMessage(text, payload.context, payload.context.attachment);
     const sessionKey = getCurrentSessionKey();
     currentSessionKey = sessionKey;
-    const wsPayload = state.wsProtocol === 'openclaw'
+    const wsPayload = (state.wsProtocol === AGENT_PROTOCOLS.OPENCLAW || state.wsProtocol === AGENT_PROTOCOLS.MICROCLAW)
       ? {
         type: 'req',
         id: makeRequestId('chat'),
