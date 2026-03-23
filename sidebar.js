@@ -1495,7 +1495,10 @@ async function loadAndRenderSessions() {
   els.sessionsList.innerHTML = '<div style="text-align:center; padding:20px; color:var(--mc-text-3);">加载中...</div>';
 
   try {
-    const payload = await sendWebSocketRequest('sessions.list');
+    // Filter sessions by current protocol tag.
+    const payload = await sendWebSocketRequest('sessions.list', {
+      search: `chatclaw:${state.wsProtocol}`
+    });
     let sessions = [];
     if (Array.isArray(payload?.sessions)) {
       sessions = payload.sessions;
