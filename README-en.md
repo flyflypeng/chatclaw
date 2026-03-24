@@ -30,7 +30,7 @@ ChatClaw is evolving rapidly. Here's what's coming next:
 - [x] **Markdown Rendering**: Better readability for structured responses.
 - [x] **OpenClaw Integration**: Native support for the OpenClaw protocol.
 - [ ] **AI-Powered Prompt Optimization**: Built-in prompt refinement tools.
-- [ ] **One-click Response Copy**: Copy Agent outputs as Markdown.
+- [x] **One-click Response Copy**: Copy Agent outputs as Markdown.
 - [ ] **One-click File Upload for Analysis**: Faster attachment and analysis workflows.
 - [ ] **Frontend Observability for Tool Calls/Skill Activation**: Visualize Agent execution progress.
 

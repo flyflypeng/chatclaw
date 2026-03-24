@@ -393,6 +393,30 @@ function setupEventListeners() {
     els.fileInput.addEventListener('change', handleFileSelect);
   }
 
+  // Chat Container event delegation
+  els.chatContainer.addEventListener('click', (e) => {
+    const copyBtn = e.target.closest('.copy-btn');
+    if (copyBtn) {
+      const messageEl = copyBtn.closest('.message');
+      if (messageEl) {
+        const rawContent = messageEl.dataset.rawContent || '';
+        navigator.clipboard.writeText(rawContent).then(() => {
+          const originalHtml = copyBtn.innerHTML;
+          copyBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          `;
+          setTimeout(() => {
+            copyBtn.innerHTML = originalHtml;
+          }, 3000);
+        }).catch(err => {
+          console.error('Failed to copy text: ', err);
+        });
+      }
+    }
+  });
+
   if (els.newSessionBtn) {
     els.newSessionBtn.addEventListener('click', startNewSession);
   }
@@ -1180,11 +1204,23 @@ function appendAgentResponse(text) {
   // Remove typing indicator if present
   const typingDots = bubble.querySelector('.typing-indicator');
   if (typingDots) {
-    bubble.innerHTML = '';
+    bubble.innerHTML = `
+      <div class="markdown-body"></div>
+      <button class="copy-btn hidden" title="复制内容" aria-label="Copy Markdown">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+      </button>
+    `;
   }
 
   currentStreamingContent += text;
-  renderMarkdown(bubble, currentStreamingContent);
+  msgEl.dataset.rawContent = currentStreamingContent;
+  const bubbleBody = bubble.querySelector('.markdown-body');
+  if (bubbleBody) {
+    renderMarkdown(bubbleBody, currentStreamingContent);
+  }
   scrollToBottom();
 
   // Every time we append, we reset the finalize timeout
@@ -1217,6 +1253,7 @@ function finalizeAgentResponse() {
   const finalizedContent = currentStreamingContent;
   const finalizedRunId = currentRunId || '';
   if (currentStreamingMessageId) {
+    const msgEl = document.getElementById(currentStreamingMessageId);
     if (currentStreamingContent.trim()) {
       if (currentStreamingReopenedFromFinalized) {
         const replaced = replaceLastAgentHistoryContent(currentStreamingContent);
@@ -1226,8 +1263,15 @@ function finalizeAgentResponse() {
       } else {
         saveMessageToHistory('agent', currentStreamingContent);
       }
+
+      // 显示复制按钮
+      if (msgEl) {
+        const copyBtn = msgEl.querySelector('.copy-btn');
+        if (copyBtn) {
+          copyBtn.classList.remove('hidden');
+        }
+      }
     } else {
-      const msgEl = document.getElementById(currentStreamingMessageId);
       if (msgEl) msgEl.remove();
     }
     currentStreamingMessageId = null;
@@ -2166,6 +2210,12 @@ async function sendMessage() {
     const agentBubble = document.getElementById(agentMsgId).querySelector('.message-bubble');
     agentBubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
 
+    // Ensure copy button is hidden during typing
+    const copyBtn = document.getElementById(agentMsgId).querySelector('.copy-btn');
+    if (copyBtn) {
+      copyBtn.classList.add('hidden');
+    }
+
   } catch (err) {
     console.error("[Sidebar] Send failed", err);
     renderMessageToUI('agent', `*Error sending message: ${err.message}*`);
@@ -2303,15 +2353,38 @@ function renderMessageToUI(role, content, timestamp, shouldScroll = true) {
       <img src="${avatarSrc}" alt="${role} avatar" />
     </div>
     <div class="message-content">
-      <div class="message-bubble"></div>
+      <div class="message-bubble-container">
+        <div class="message-bubble">
+          <div class="markdown-body"></div>
+          ${role === 'agent' ? `
+            <button class="copy-btn hidden" title="复制内容" aria-label="Copy Markdown">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          ` : ''}
+        </div>
+      </div>
       <div class="message-meta">${timeStr}</div>
     </div>
   `;
 
   // Render markdown if content exists
-  const bubble = div.querySelector('.message-bubble');
+  const bubbleBody = div.querySelector('.markdown-body');
   if (content) {
-    renderMarkdown(bubble, content);
+    div.dataset.rawContent = content;
+    renderMarkdown(bubbleBody, content);
+
+    // 渲染已有内容时直接显示复制按钮
+    if (role === 'agent') {
+      const copyBtn = div.querySelector('.copy-btn');
+      if (copyBtn) {
+        copyBtn.classList.remove('hidden');
+      }
+    }
+  } else {
+    div.dataset.rawContent = '';
   }
 
   els.chatContainer.appendChild(div);
