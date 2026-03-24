@@ -2249,9 +2249,28 @@ function renderMessageToUI(role, content, timestamp, shouldScroll = true) {
 
   const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
 
+  let avatarSrc = 'icons/chatclaw-icon.png';
+  if (role === 'user') {
+    avatarSrc = 'icons/user-icon.png';
+  } else {
+    const protocol = state.wsProtocol || 'chatclaw';
+    if (protocol === 'openclaw') {
+      avatarSrc = 'icons/openclaw-icon.png';
+    } else if (protocol === 'microclaw') {
+      avatarSrc = 'icons/microclaw-icon.png';
+    } else {
+      avatarSrc = 'icons/chatclaw-icon.png';
+    }
+  }
+
   div.innerHTML = `
-    <div class="message-bubble"></div>
-    <div class="message-meta">${timeStr}</div>
+    <div class="message-avatar">
+      <img src="${avatarSrc}" alt="${role} avatar" />
+    </div>
+    <div class="message-content">
+      <div class="message-bubble"></div>
+      <div class="message-meta">${timeStr}</div>
+    </div>
   `;
 
   // Render markdown if content exists
