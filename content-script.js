@@ -1,10 +1,33 @@
 
 (() => {
+  if (window.__chatclawContentScriptLoaded) return;
+  window.__chatclawContentScriptLoaded = true;
   let floatHost = null;
   let floatRoot = null;
   let floatBtn = null;
   let currentSelection = '';
   let isEnabled = true;
+  const isContextInvalidatedError = (error) => {
+    const message = String(error?.message || '');
+    return message.includes('Extension context invalidated');
+  };
+
+  const handleExtensionError = (error) => {
+    if (isContextInvalidatedError(error)) {
+      hideButton();
+      return;
+    }
+    console.warn('[ChatClaw ContentScript] Extension API call failed:', error?.message || error);
+  };
+
+  const runWithExtensionContext = (fn) => {
+    try {
+      return fn();
+    } catch (error) {
+      handleExtensionError(error);
+      return undefined;
+    }
+  };
 
   const CSS = `
     .chatclaw-float-btn {
@@ -52,20 +75,26 @@
       }
     }
   `;
+  const ICON_DATA_URI = "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230b1020'/%3E%3Ctext x='12' y='16' text-anchor='middle' font-size='12' fill='white'%3E%F0%9F%A6%9E%3C/text%3E%3C/svg%3E";
+  const CHATCLAW_ICON_URL = runWithExtensionContext(() => chrome.runtime.getURL('icons/chatclaw-icon.png')) || ICON_DATA_URI;
 
   // Initialize settings
-  chrome.storage.local.get(['enableFloatBtn'], (result) => {
-    isEnabled = result.enableFloatBtn !== false; // Default true
-    console.log('[ChatClaw ContentScript] Float button setting loaded:', isEnabled);
+  runWithExtensionContext(() => {
+    chrome.storage.local.get(['enableFloatBtn'], (result) => {
+      isEnabled = result.enableFloatBtn !== false;
+      console.log('[ChatClaw ContentScript] Float button setting loaded:', isEnabled);
+    });
   });
 
   // Listen for setting changes
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.enableFloatBtn) {
-      isEnabled = changes.enableFloatBtn.newValue;
-      console.log('[ChatClaw ContentScript] Float button setting changed to:', isEnabled);
-      if (!isEnabled) hideButton();
-    }
+  runWithExtensionContext(() => {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.enableFloatBtn) {
+        isEnabled = changes.enableFloatBtn.newValue;
+        console.log('[ChatClaw ContentScript] Float button setting changed to:', isEnabled);
+        if (!isEnabled) hideButton();
+      }
+    });
   });
 
   function createFloatButton() {
@@ -93,7 +122,7 @@
     floatBtn = document.createElement('div'); // Use div to avoid default button styles
     floatBtn.className = 'chatclaw-float-btn';
     floatBtn.innerHTML = `
-      <img src="${chrome.runtime.getURL('icons/chatclaw-icon.png')}" alt="ChatClaw" />
+      <img src="${CHATCLAW_ICON_URL}" alt="ChatClaw" />
       <span>Ask ChatClaw</span>
     `;
 
@@ -115,15 +144,23 @@
 
     console.log('[ChatClaw ContentScript] Float button clicked. Sending selection to background:', currentSelection.substring(0, 30) + '...');
 
-    chrome.runtime.sendMessage({
-      action: 'open_sidebar',
-      selection: currentSelection
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.warn('[ChatClaw ContentScript] Failed to send message to background:', chrome.runtime.lastError.message);
-      } else {
-        console.log('[ChatClaw ContentScript] Background message sent successfully.');
-      }
+    runWithExtensionContext(() => {
+      chrome.runtime.sendMessage({
+        action: 'open_sidebar',
+        selection: currentSelection
+      }, () => {
+        let runtimeError = null;
+        try {
+          runtimeError = chrome.runtime.lastError;
+        } catch (error) {
+          handleExtensionError(error);
+        }
+        if (runtimeError) {
+          console.warn('[ChatClaw ContentScript] Failed to send message to background:', runtimeError.message);
+        } else {
+          console.log('[ChatClaw ContentScript] Background message sent successfully.');
+        }
+      });
     });
 
     hideButton();
@@ -256,16 +293,18 @@
   window.addEventListener('resize', hideButton, { passive: true });
 
   // Listen for context request
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.type === 'collect-basic-context') {
-      sendResponse({
-        context: {
-          title: document.title,
-          url: window.location.href,
-          selection: window.getSelection().toString()
-        }
-      });
-    }
+  runWithExtensionContext(() => {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.type === 'collect-basic-context') {
+        sendResponse({
+          context: {
+            title: document.title,
+            url: window.location.href,
+            selection: window.getSelection().toString()
+          }
+        });
+      }
+    });
   });
 
 })();
