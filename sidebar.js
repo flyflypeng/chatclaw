@@ -1662,11 +1662,18 @@ async function loadAndRenderSessions() {
       const updatedAt = updatedAtValue ? new Date(updatedAtValue).toLocaleString() : '';
       return `
         <div class="session-item" data-key="${escapeHtml(sessionKey)}">
+          <div style="margin-right: 12px; color: var(--mc-text-3); display: flex; align-items: center; justify-content: center;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
           <div class="session-info">
             <div class="session-key" title="${escapeHtml(sessionKey)}">${escapeHtml(sessionKey || 'Unknown Session')}</div>
             <div class="session-time">${updatedAt}</div>
           </div>
-          <button class="delete-session-btn" title="删除会话">&times;</button>
+          <button class="delete-session-btn" title="删除会话">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
         </div>
       `;
     }).join('');
@@ -1770,7 +1777,7 @@ function renderAgentList() {
         <div class="field-header-row">
           <label class="field-label">Agent 名称</label>
           <div class="agent-controls">
-             ${state.agents.length > 1 ? `<button class="delete-agent-btn" title="删除">🗑️</button>` : ''}
+             ${state.agents.length > 1 ? `<button class="delete-agent-btn" title="删除"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>` : ''}
           </div>
         </div>
         <input type="text" class="field-input agent-name" value="${escapeHtml(agent.name)}">

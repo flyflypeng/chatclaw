@@ -185,14 +185,11 @@
           <h3 id="confirm-title">提示</h3>
           <button id="close-confirm" class="close-btn">&times;</button>
         </div>
-        <div class="modal-body" style="padding-bottom: 20px;">
-          <p id="confirm-message" style="margin: 0; font-size: 13px; color: var(--mc-text-2); line-height: 1.5;">
-            确认执行此操作吗？</p>
-          <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
-            <button id="confirm-cancel-btn" class="btn-action btn-save"
-              style="flex: 0 1 auto; padding: 6px 16px;">取消</button>
-            <button id="confirm-ok-btn" class="btn-action"
-              style="flex: 0 1 auto; padding: 6px 16px; background: var(--mc-red); color: white; border: none;">确定</button>
+        <div class="modal-body dialog-body">
+          <p id="confirm-message" class="dialog-message">确认执行此操作吗？</p>
+          <div class="dialog-actions">
+            <button id="confirm-cancel-btn" class="btn-action btn-save btn-dialog">取消</button>
+            <button id="confirm-ok-btn" class="btn-action btn-danger btn-dialog">确定</button>
           </div>
         </div>
       </div>
@@ -205,12 +202,10 @@
           <h3 id="alert-title">提示</h3>
           <button id="close-alert" class="close-btn">&times;</button>
         </div>
-        <div class="modal-body" style="padding-bottom: 20px;">
-          <p id="alert-message" style="margin: 0; font-size: 13px; color: var(--mc-text-2); line-height: 1.5;">
-            操作失败</p>
-          <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
-            <button id="alert-ok-btn" class="btn-action"
-              style="flex: 0 1 auto; padding: 6px 16px; background: var(--mc-accent); color: white; border: none;">确定</button>
+        <div class="modal-body dialog-body">
+          <p id="alert-message" class="dialog-message">操作失败</p>
+          <div class="dialog-actions">
+            <button id="alert-ok-btn" class="btn-action btn-primary btn-dialog">确定</button>
           </div>
         </div>
       </div>
@@ -224,13 +219,10 @@
           <button id="close-settings" class="close-btn">&times;</button>
         </div>
         <div class="modal-body">
-          <div class="settings-section"
-            style="margin-bottom: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--mc-border);">
-            <h4 style="margin: 0 0 10px 0; font-size: 14px; color: var(--mc-text);">通用设置</h4>
-            <div class="field-group"
-              style="margin-bottom: 0; flex-direction: row; align-items: center; justify-content: space-between;">
-              <label class="field-label" style="font-size: 13px; color: var(--mc-text); font-weight: 500;">启用划线弹出提示框
-                (Ask ChatClaw)</label>
+          <div class="settings-section has-divider">
+            <h4>通用设置</h4>
+            <div class="field-group toggle-group">
+              <label class="field-label">启用划线弹出提示框 (Ask ChatClaw)</label>
               <label class="mc-switch">
                 <input type="checkbox" id="setting-enable-float-btn">
                 <span class="mc-slider"></span>
@@ -239,12 +231,12 @@
           </div>
 
           <div class="settings-section">
-            <h4 style="margin: 0 0 12px 0; font-size: 14px; color: var(--mc-text);">Agent 配置</h4>
+            <h4>Agent 配置</h4>
             <div id="agent-list" class="agent-list-container">
               <!-- Agent cards injected here -->
             </div>
 
-            <button id="add-agent-btn" class="add-agent-btn" title="添加新 Agent" style="margin-top: 16px;">
+            <button id="add-agent-btn" class="add-agent-btn" title="添加新 Agent">
               +
             </button>
           </div>
