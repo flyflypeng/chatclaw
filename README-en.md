@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="icons/chatclaw-icon.png" alt="ChatClaw Logo" width="128" />
+  <img src="public/icons/chatclaw-icon.png" alt="ChatClaw Logo" width="128" />
 </div>
 
 # ChatClaw Chrome Extension
