@@ -111,85 +111,11 @@ let currentRunId = null;
 let recentEventKeys = [];
 const recentEventKeySet = new Set();
 const pendingRequests = new Map();
-const STREAM_DEBUG_STORAGE_KEY = 'chatclaw_stream_debug';
-const STREAM_DEBUG_MAX_LOGS = 600;
-const streamDebugLogs = [];
-const streamChunkCounters = new Map();
 let openClawDeferredFinalizeTimer = null;
 let lastFinalizedAgentMessageId = null;
 let lastFinalizedAgentContent = '';
 let lastFinalizedRunId = '';
 let currentStreamingReopenedFromFinalized = false;
-
-function isStreamDebugEnabled() {
-  try {
-    return localStorage.getItem(STREAM_DEBUG_STORAGE_KEY) === '1';
-  } catch (_) {
-    return false;
-  }
-}
-
-function toDebugPreview(text, max = 120) {
-  if (typeof text !== 'string') return '';
-  const normalized = text.replace(/\s+/g, ' ').trim();
-  if (!normalized) return '';
-  return normalized.length > max ? `${normalized.slice(0, max)}…` : normalized;
-}
-
-function pushStreamDebugLog(entry) {
-  if (!isStreamDebugEnabled()) return;
-  const record = {
-    ts: Date.now(),
-    protocol: state.wsProtocol || 'unknown',
-    runId: currentRunId || '',
-    sessionKey: currentSessionKey || '',
-    ...entry
-  };
-  streamDebugLogs.push(record);
-  if (streamDebugLogs.length > STREAM_DEBUG_MAX_LOGS) {
-    streamDebugLogs.splice(0, streamDebugLogs.length - STREAM_DEBUG_MAX_LOGS);
-  }
-  console.debug('[ChatClaw Stream Debug]', record);
-}
-
-function trackStreamChunk(source, text, meta = {}) {
-  if (!isStreamDebugEnabled()) return;
-  const preview = toDebugPreview(text);
-  if (!preview) return;
-  const runScope = currentRunId || 'no-run';
-  const sessionScope = currentSessionKey || 'no-session';
-  const fingerprint = `${runScope}:${sessionScope}:${preview}`;
-  const prev = streamChunkCounters.get(fingerprint);
-  if (!prev) {
-    streamChunkCounters.set(fingerprint, { count: 1, source });
-    return;
-  }
-  const count = prev.count + 1;
-  streamChunkCounters.set(fingerprint, { count, source });
-  pushStreamDebugLog({
-    kind: 'duplicate-chunk',
-    source,
-    previousSource: prev.source,
-    repeatCount: count,
-    textLength: typeof text === 'string' ? text.length : 0,
-    preview,
-    ...meta
-  });
-}
-
-function appendAgentResponseFromSource(source, text, meta = {}) {
-  if (!text) return;
-  const preview = toDebugPreview(text);
-  pushStreamDebugLog({
-    kind: 'append',
-    source,
-    textLength: text.length,
-    preview,
-    ...meta
-  });
-  trackStreamChunk(source, text, meta);
-  appendAgentResponse(text);
-}
 
 function clearOpenClawDeferredFinalize() {
   if (!openClawDeferredFinalizeTimer) return;
@@ -201,10 +127,8 @@ function scheduleOpenClawDeferredFinalize(reason, delayMs = 280) {
   clearOpenClawDeferredFinalize();
   openClawDeferredFinalizeTimer = setTimeout(() => {
     openClawDeferredFinalizeTimer = null;
-    pushStreamDebugLog({ kind: 'deferred-finalize-fire', reason });
     finalizeAgentResponse();
   }, delayMs);
-  pushStreamDebugLog({ kind: 'deferred-finalize-set', reason, delayMs });
 }
 
 function resetFinalizedAgentSnapshot() {
@@ -237,44 +161,15 @@ function tryAttachLateOpenClawFullText(text, source, meta = {}) {
   if (!lastFinalizedAgentMessageId || !lastFinalizedAgentContent) return false;
   const msgEl = document.getElementById(lastFinalizedAgentMessageId);
   if (!msgEl) return false;
-  if (text === lastFinalizedAgentContent) {
-    pushStreamDebugLog({ kind: 'append-skip', source, reason: 'late-same-as-finalized', ...meta });
-    return true;
-  }
-  if (lastFinalizedAgentContent.startsWith(text)) {
-    pushStreamDebugLog({ kind: 'append-skip', source, reason: 'late-shorter-than-finalized', ...meta });
-    return true;
-  }
+  if (text === lastFinalizedAgentContent) return true;
+  if (lastFinalizedAgentContent.startsWith(text)) return true;
   if (!text.startsWith(lastFinalizedAgentContent)) return false;
   currentStreamingMessageId = lastFinalizedAgentMessageId;
   currentStreamingContent = lastFinalizedAgentContent;
   currentStreamingReopenedFromFinalized = true;
   const rest = text.slice(lastFinalizedAgentContent.length);
-  if (rest) {
-    appendAgentResponseFromSource(source, rest, { ...meta, appendMode: 'late-tail-reopen' });
-  }
+  if (rest) appendAgentResponse(rest);
   return true;
-}
-
-if (typeof window !== 'undefined') {
-  window.chatclawStreamDebug = {
-    enable() {
-      localStorage.setItem(STREAM_DEBUG_STORAGE_KEY, '1');
-      return true;
-    },
-    disable() {
-      localStorage.removeItem(STREAM_DEBUG_STORAGE_KEY);
-      return true;
-    },
-    clear() {
-      streamDebugLogs.length = 0;
-      streamChunkCounters.clear();
-      return true;
-    },
-    dump() {
-      return streamDebugLogs.slice();
-    }
-  };
 }
 
 // DOM Elements
@@ -764,15 +659,6 @@ function handleWebSocketMessage(dataStr) {
     }
 
     const data = JSON.parse(dataStr);
-    pushStreamDebugLog({
-      kind: 'inbound',
-      dataType: String(data?.type || ''),
-      event: String(data?.event || ''),
-      seq: typeof data?.seq === 'number' ? data.seq : null,
-      id: data?.id ? String(data.id) : '',
-      status: String(data?.payload?.status || ''),
-      preview: toDebugPreview(extractContentText(data))
-    });
     // console.log('Parsed WS Message:', data);
 
     if (data.id && pendingRequests.has(data.id)) {
@@ -1010,10 +896,7 @@ function isAgentStreamEvent(eventName) {
 function handleInlineContentMessage(data) {
   const content = extractContentText(data);
   if (!content) return false;
-  appendAgentResponseFromSource('inline-content', content, {
-    dataType: String(data?.type || ''),
-    event: String(data?.event || '')
-  });
+  appendAgentResponse(content);
   return true;
 }
 
@@ -1200,11 +1083,7 @@ function handleAgentStreamingEvent(data) {
   }
 
   if (delta) {
-    appendAgentResponseFromSource(`stream:${String(eventName || '')}`, delta, {
-      phase,
-      stream,
-      seq: typeof data?.seq === 'number' ? data.seq : null
-    });
+    appendAgentResponse(delta);
   }
 
   // Handle errors
@@ -1228,23 +1107,17 @@ function appendFinalResponse(text, source = 'final-response', meta = {}) {
     if (tryAttachLateOpenClawFullText(text, source, meta)) {
       return;
     }
-    appendAgentResponseFromSource(source, text, { ...meta, appendMode: 'init' });
+    appendAgentResponse(text);
     return;
   }
-  if (currentStreamingContent === text) {
-    pushStreamDebugLog({ kind: 'append-skip', source, reason: 'same-as-current', ...meta });
-    return;
-  }
+  if (currentStreamingContent === text) return;
   if (text.startsWith(currentStreamingContent)) {
     const rest = text.slice(currentStreamingContent.length);
-    if (rest) appendAgentResponseFromSource(source, rest, { ...meta, appendMode: 'tail-diff' });
+    if (rest) appendAgentResponse(rest);
     return;
   }
-  if (currentStreamingContent.startsWith(text)) {
-    pushStreamDebugLog({ kind: 'append-skip', source, reason: 'current-has-text', ...meta });
-    return;
-  }
-  appendAgentResponseFromSource(source, text, { ...meta, appendMode: 'full-replace-fallback' });
+  if (currentStreamingContent.startsWith(text)) return;
+  appendAgentResponse(text);
 }
 
 let currentStreamingMessageId = null;
@@ -1352,7 +1225,6 @@ function finalizeAgentResponse() {
   }
   currentRunId = null;
   state.isTyping = false;
-  streamChunkCounters.clear();
   currentStreamingReopenedFromFinalized = false;
 }
 
@@ -2229,13 +2101,6 @@ async function sendMessage() {
     clearOpenClawDeferredFinalize();
     currentSessionKey = sessionKey;
     currentRunId = null;
-    streamChunkCounters.clear();
-    pushStreamDebugLog({
-      kind: 'send',
-      sessionKey,
-      method: state.wsProtocol === AGENT_PROTOCOLS.OPENCLAW ? resolveOpenClawChatMethod() : 'chat.send',
-      userTextPreview: toDebugPreview(text)
-    });
     const wsPayload = (() => {
       if (state.wsProtocol === AGENT_PROTOCOLS.OPENCLAW) {
         const method = resolveOpenClawChatMethod();
