@@ -149,6 +149,12 @@ function replaceLastAgentHistoryContent(content) {
       timestamp: Date.now()
     };
     storage.set({ agents: state.agents });
+
+    const sessionKey = currentAgent.sessionKey || getCurrentSessionKey();
+    if (sessionKey) {
+      const sessionStoreKey = `session_msgs_${sessionKey}`;
+      storage.set({ [sessionStoreKey]: currentAgent.messages });
+    }
     return true;
   }
   return false;
@@ -336,7 +342,10 @@ function loadChatHistory() {
   if (currentAgent && currentAgent.messages && currentAgent.messages.length > 0) {
     if (els.home) els.home.classList.add('hidden');
 
-    currentAgent.messages.forEach((msg) => {
+    // 将最近 10 条对话记录显示在对话框中
+    const msgsToDisplay = currentAgent.messages.slice(-10);
+
+    msgsToDisplay.forEach((msg) => {
       renderMessageToUI(msg.role, msg.content, msg.timestamp, false);
     });
 
@@ -1647,10 +1656,17 @@ if (els.sessionsList) {
       const currentAgent = state.agents.find(a => a.id === state.currentAgentId);
       if (currentAgent) {
         currentAgent.sessionKey = sessionKey;
-        currentAgent.messages = []; // Clear current UI messages to force reload from backend if supported, or just start fresh UI for that session
+
+        // 从本地存储加载会话记录
+        const sessionStoreKey = `session_msgs_${sessionKey}`;
+        const data = await storage.get([sessionStoreKey]);
+        const sessionMsgs = data[sessionStoreKey] || [];
+
+        currentAgent.messages = sessionMsgs;
         storage.set({ agents: state.agents });
-        els.chatContainer.innerHTML = '';
-        if (els.home) els.home.classList.remove('hidden');
+
+        loadChatHistory();
+
         els.sessionsModal.classList.add('hidden');
       }
     }
@@ -2165,6 +2181,13 @@ function saveMessageToHistory(role, content) {
     });
     // Persist
     storage.set({ agents: state.agents });
+
+    // Save to session-specific storage
+    const sessionKey = currentAgent.sessionKey || getCurrentSessionKey();
+    if (sessionKey) {
+      const sessionStoreKey = `session_msgs_${sessionKey}`;
+      storage.set({ [sessionStoreKey]: currentAgent.messages });
+    }
   }
 }
 
