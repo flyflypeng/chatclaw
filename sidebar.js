@@ -321,6 +321,10 @@ function updateCurrentAgentState() {
     state.apiToken = current.token || '';
     state.showThought = !!current.showThought;
     state.preferredProtocol = normalizeAgentProtocol(current.protocol || AGENT_PROTOCOLS.AUTO);
+
+    // Fix stale wsProtocol issue during UI rendering (like loadChatHistory) before handshake completes
+    state.wsProtocol = resolveHandshakeProtocol(state.preferredProtocol);
+
     if (els.currentModelName) els.currentModelName.textContent = current.name;
   }
 }
@@ -588,7 +592,9 @@ function connectCurrentAgent() {
       const ws = new WebSocket(candidateUrl);
       pendingConnectRequestId = null;
       pendingConnectProtocol = null;
-      state.wsProtocol = AGENT_PROTOCOLS.MICROCLAW;
+
+      // Initialize wsProtocol to the expected protocol for this agent instead of hardcoding MICROCLAW
+      state.wsProtocol = resolveHandshakeProtocol(state.preferredProtocol);
       state.supportedMethods = [];
 
       ws.onopen = async () => {
@@ -2253,7 +2259,11 @@ function renderMessageToUI(role, content, timestamp, shouldScroll = true) {
   if (role === 'user') {
     avatarSrc = 'icons/user-icon.png';
   } else {
-    const protocol = state.wsProtocol || 'chatclaw';
+    let protocol = state.preferredProtocol;
+    if (!protocol || protocol === 'auto') {
+      protocol = state.wsProtocol || 'chatclaw';
+    }
+
     if (protocol === 'openclaw') {
       avatarSrc = 'icons/openclaw-icon.png';
     } else if (protocol === 'microclaw') {
