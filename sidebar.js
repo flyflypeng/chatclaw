@@ -821,9 +821,10 @@ function handleOpenClawChatEvent(payload) {
   const text = extractContentText(payload?.message || payload);
   const runId = typeof payload?.runId === 'string' ? payload.runId : '';
   if (runId && !currentRunId) currentRunId = runId;
-  if (payload?.sessionKey && !isMatchingSessionKey(payload.sessionKey)) {
+  const payloadSessionKey = payload?.key || payload?.sessionKey || payload?.session_key;
+  if (payloadSessionKey && !isMatchingSessionKey(payloadSessionKey)) {
     if (runId && currentRunId && runId === currentRunId) {
-      currentSessionKey = payload.sessionKey;
+      currentSessionKey = payloadSessionKey;
     } else {
       return;
     }
@@ -1061,21 +1062,22 @@ function handleAgentStreamingEvent(data) {
   const eventName = data.event || '';
   const payload = data.payload || {};
   const runId = typeof payload.runId === 'string' ? payload.runId : '';
+  const payloadSessionKey = payload.key || payload.sessionKey || payload.session_key;
 
-  if (payload.sessionKey && !isMatchingSessionKey(payload.sessionKey)) {
+  if (payloadSessionKey && !isMatchingSessionKey(payloadSessionKey)) {
     if (!runId || !currentRunId || runId !== currentRunId) {
       return;
     }
-    currentSessionKey = payload.sessionKey;
-  } else if (payload.sessionKey && runId && currentRunId && runId === currentRunId && currentSessionKey !== payload.sessionKey) {
-    currentSessionKey = payload.sessionKey;
+    currentSessionKey = payloadSessionKey;
+  } else if (payloadSessionKey && runId && currentRunId && runId === currentRunId && currentSessionKey !== payloadSessionKey) {
+    currentSessionKey = payloadSessionKey;
   }
 
   if (runId && !currentRunId) {
     currentRunId = runId;
   }
 
-  if (payload.sessionKey && !isMatchingSessionKey(payload.sessionKey)) {
+  if (payloadSessionKey && !isMatchingSessionKey(payloadSessionKey)) {
     return;
   }
 
@@ -2131,7 +2133,7 @@ async function sendMessage() {
           id: makeRequestId('chat'),
           method,
           params: {
-            sessionKey,
+            key: sessionKey,
             message: mergedMessage,
             idempotencyKey: makeRequestId('idem')
           }
@@ -2142,7 +2144,7 @@ async function sendMessage() {
           id: makeRequestId('chat'),
           method: 'chat.send',
           params: {
-            sessionKey,
+            key: sessionKey,
             message: mergedMessage,
             idempotencyKey: makeRequestId('idem')
           }
