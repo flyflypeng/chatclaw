@@ -2080,10 +2080,18 @@ async function togglePageContext() {
   } else {
     try {
       console.log('[Sidebar] Fetching active tab info for page context.');
-      const tabs = await tabsApi.query({ active: true, currentWindow: true });
-      if (tabs[0]) {
-        let title = tabs[0].title;
-        let url = tabs[0].url;
+      const tabs = await tabsApi.query({ active: true, lastFocusedWindow: true });
+      if (!tabs || tabs.length === 0) {
+        // Fallback if lastFocusedWindow fails
+        const allTabs = await tabsApi.query({ active: true });
+        if (allTabs && allTabs.length > 0) {
+          tabs.push(allTabs[0]);
+        }
+      }
+
+      if (tabs && tabs[0]) {
+        let title = tabs[0].title || 'Unknown Page';
+        let url = tabs[0].url || '';
 
         // Try to get full context from content script if available
         try {
@@ -2468,7 +2476,12 @@ function escapeHtml(text) {
 function resizeTextarea() {
   const el = els.userInput;
   el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  el.style.height = Math.min(el.scrollHeight, 240) + 'px';
+  if (el.scrollHeight > 240) {
+    el.style.overflowY = 'auto';
+  } else {
+    el.style.overflowY = 'hidden';
+  }
 }
 
 function updateSendButton() {

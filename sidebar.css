@@ -56,6 +56,8 @@ body {
   background: rgba(246, 247, 251, 0.8);
   backdrop-filter: saturate(140%) blur(10px);
   border-bottom: 1px solid var(--mc-border);
+  z-index: 100;
+  position: relative;
 }
 
 .mc-brand {
@@ -119,6 +121,48 @@ body {
   color: var(--mc-text);
   cursor: pointer;
   box-shadow: 0 8px 18px rgba(2, 6, 23, 0.06);
+  position: relative;
+}
+
+/* Tooltip Styles for iconbtn */
+.mc-iconbtn[data-tooltip]::before,
+.mc-iconbtn[data-tooltip]::after {
+  position: absolute;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+  z-index: 9999;
+}
+
+.mc-iconbtn[data-tooltip]::before {
+  content: '';
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  border: 5px solid transparent;
+  border-bottom-color: #0b1020;
+}
+
+.mc-iconbtn[data-tooltip]::after {
+  content: attr(data-tooltip);
+  top: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  background-color: #0b1020;
+  color: #fff;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.mc-iconbtn:hover[data-tooltip]::before,
+.mc-iconbtn:hover[data-tooltip]::after {
+  visibility: visible;
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .mc-iconbtn:disabled {
@@ -337,7 +381,7 @@ body {
   border-radius: 16px;
   padding: 10px 12px;
   font-size: 14px;
-  line-height: 1.55;
+  line-height: 1.65;
   box-shadow: var(--mc-shadow-sm);
   border: 1px solid var(--mc-border);
   background: var(--mc-surface);
@@ -353,6 +397,7 @@ body {
 .message.agent .message-bubble {
   border-bottom-left-radius: 4px;
   padding-bottom: 28px;
+  background: var(--mc-surface);
   /* Make room for the copy button */
 }
 
@@ -398,33 +443,95 @@ body {
 
 .mc-composer {
   padding: 12px 14px 14px;
-  border-top: 1px solid var(--mc-border);
   background: rgba(246, 247, 251, 0.86);
   backdrop-filter: saturate(140%) blur(10px);
 }
 
-.mc-toolbar {
+.mc-composer-inner {
+  border-radius: 18px;
+  border: 1px solid var(--mc-border);
+  background: var(--mc-surface);
+  box-shadow: var(--mc-shadow);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+}
+
+.mc-composer-inner:has(.mc-textarea:focus) {
+  border-color: var(--mc-accent);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15), var(--mc-shadow);
+}
+
+.mc-composer-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.mc-composer-bottom {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.mc-send-group {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid var(--mc-border);
-  box-shadow: 0 10px 20px rgba(2, 6, 23, 0.05);
+}
+
+.mc-shortcut-hint {
+  font-size: 11px;
+  color: var(--mc-text-3);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  user-select: none;
+  pointer-events: none;
+}
+
+.mc-composer-inner:has(.mc-textarea:focus) .mc-shortcut-hint {
+  opacity: 0.7;
+}
+
+.mc-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .mc-modelpill {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 6px;
+  padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid rgba(124, 58, 237, 0.18);
-  background: rgba(124, 58, 237, 0.08);
+  background: rgba(124, 58, 237, 0.05);
   color: var(--mc-text);
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 12px;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mc-modelpill:hover {
+  background: rgba(124, 58, 237, 0.1);
+}
+
+.mc-modelpill.mc-new-session {
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  background: rgba(34, 197, 94, 0.08);
+  color: var(--mc-green);
+  min-width: 100px;
+  justify-content: center;
+}
+
+.mc-modelpill.mc-new-session:hover {
+  background: rgba(34, 197, 94, 0.15);
 }
 
 .mc-modelpill:disabled {
@@ -439,22 +546,24 @@ body {
 .mc-toolicons {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex: 1;
 }
 
 .mc-toolicon {
-  width: 36px;
-  height: 36px;
-  border-radius: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(11, 16, 32, 0.8);
+  color: var(--mc-text-3);
+  /* Light gray */
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   position: relative;
+  transition: all 0.2s ease;
 }
 
 /* Tooltip Styles */
@@ -499,19 +608,12 @@ body {
 }
 
 .mc-toolicon:hover {
-  background: rgba(255, 255, 255, 0.9);
-  border-color: rgba(124, 58, 237, 0.16);
+  background: rgba(11, 16, 32, 0.04);
+  color: var(--mc-text);
+  /* Dark gray/black */
 }
 
-.mc-new-session {
-  color: #fff;
-  background: var(--mc-accent, #7c3aed);
-}
 
-.mc-toolicon.mc-new-session:hover {
-  background: var(--mc-accent-2, #6d28d9);
-  border-color: transparent;
-}
 
 .mc-toolicon.active {
   background: rgba(124, 58, 237, 0.1);
@@ -535,29 +637,19 @@ body {
   cursor: not-allowed;
 }
 
-.mc-inputcard {
-  margin-top: 10px;
-  border-radius: 18px;
-  border: 1px solid var(--mc-border);
-  background: var(--mc-surface);
-  box-shadow: var(--mc-shadow);
-  padding: 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .mc-textarea {
-  flex: 1;
+  width: 100%;
   resize: none;
   border: none;
   outline: none;
   background: transparent;
   font-size: 14px;
   line-height: 1.55;
-  max-height: 160px;
+  max-height: 240px;
   min-height: 24px;
   color: var(--mc-text);
+  padding: 4px 0;
+  overflow-y: hidden;
 }
 
 .mc-textarea::placeholder {
@@ -565,9 +657,9 @@ body {
 }
 
 .mc-send {
-  width: 40px;
-  height: 40px;
-  border-radius: 16px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   border: none;
   background: var(--mc-accent);
   color: white;
@@ -575,11 +667,13 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 10px 20px rgba(124, 58, 237, 0.28);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.28);
+  transition: all 0.2s ease;
 }
 
 .mc-send:disabled {
-  background: rgba(11, 16, 32, 0.18);
+  background: #f3f4f6;
+  color: #9ca3af;
   box-shadow: none;
   cursor: not-allowed;
 }
@@ -1169,7 +1263,7 @@ textarea.field-input {
 
 /* Markdown specific styles */
 .message-bubble p {
-  margin: 0 0 10px 0;
+  margin: 0 0 14px 0;
 }
 
 .message-bubble p:last-child {
@@ -1182,9 +1276,9 @@ textarea.field-input {
 .message-bubble h4,
 .message-bubble h5,
 .message-bubble h6 {
-  margin: 16px 0 8px 0;
+  margin: 20px 0 10px 0;
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.3;
   color: var(--mc-text);
 }
 
@@ -1202,38 +1296,44 @@ textarea.field-input {
 
 .message-bubble ul,
 .message-bubble ol {
-  margin: 0 0 10px 0;
+  margin: 0 0 14px 0;
   padding-left: 20px;
 }
 
 .message-bubble li {
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .message-bubble blockquote {
-  margin: 10px 0;
+  margin: 14px 0;
   padding: 8px 14px;
   color: var(--mc-text-2);
-  border-left: 4px solid var(--mc-border);
+  border-left: 4px solid rgba(11, 16, 32, 0.1);
   background: rgba(0, 0, 0, 0.02);
   border-radius: 4px;
+}
+
+.message-bubble hr {
+  border: none;
+  border-top: 1px solid rgba(11, 16, 32, 0.06);
+  margin: 16px 0;
 }
 
 .message-bubble table {
   width: 100%;
   border-collapse: collapse;
-  margin: 10px 0;
+  margin: 14px 0;
 }
 
 .message-bubble th,
 .message-bubble td {
   border: 1px solid var(--mc-border);
-  padding: 6px 10px;
+  padding: 8px 16px;
   text-align: left;
 }
 
 .message-bubble th {
-  background: rgba(0, 0, 0, 0.03);
+  background: #f9fafb;
   font-weight: 600;
 }
 
