@@ -29,8 +29,9 @@ ChatClaw is evolving rapidly. Here's what's coming next:
 - [x] **Floating Action Button**: Trigger Ask ChatClaw from selected text on any webpage.
 - [x] **Markdown Rendering**: Better readability for structured responses.
 - [x] **OpenClaw Integration**: Native support for the OpenClaw protocol.
-- [ ] **AI-Powered Prompt Optimization**: Built-in prompt refinement tools.
 - [x] **One-click Response Copy**: Copy Agent outputs as Markdown.
+- [ ] **MicroClaw High-Risk Tool Execution Confirmation**: Prompt for confirmation before executing high-risk tools.
+- [ ] **AI-Powered Prompt Optimization**: Built-in prompt refinement tools.
 - [ ] **One-click File Upload for Analysis**: Faster attachment and analysis workflows.
 - [ ] **Frontend Observability for Tool Calls/Skill Activation**: Visualize Agent execution progress.
 
