@@ -20,6 +20,7 @@
 - **File Analysis**: Upload text-based files (code, logs, docs) for Agent analysis.
 - **Prompt Management**: Save, search, and reuse prompts with `/<prompt-name>` shortcuts.
 - **Connection Status Indicator**: Instantly view connection health with status dots.
+- **High Security & Privacy**: All data stays in your local browser and personal Agent backend — no third-party servers involved, truly protecting your privacy.
 
 ## 🛣️ Roadmap
 
