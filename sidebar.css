@@ -398,7 +398,11 @@ body {
   border-bottom-left-radius: 4px;
   padding-bottom: 28px;
   background: var(--mc-surface);
-  /* Make room for the copy button */
+}
+
+.message.agent .message-bubble:has(.typing-indicator) {
+  padding-bottom: 0;
+  padding-top: 8px;
 }
 
 .message-meta {
@@ -1887,15 +1891,14 @@ textarea.field-input {
   text-overflow: ellipsis;
 }
 
-/* Typing Indicator */
+/* Typing Indicator - Compact Optimized Version */
 .typing-indicator {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 4px 0;
-  height: 24px;
-  /* Fix height to prevent layout shift */
+  gap: 5px;
+  padding: 0;
+  height: 20px;
 }
 
 .typing-indicator span {
@@ -1917,12 +1920,14 @@ textarea.field-input {
 @keyframes typing-bounce {
 
   0%,
-  80%,
+  60%,
   100% {
     transform: translateY(0);
+    opacity: 0.5;
   }
 
-  40% {
-    transform: translateY(-6px);
+  30% {
+    transform: translateY(-5px);
+    opacity: 1;
   }
 }
