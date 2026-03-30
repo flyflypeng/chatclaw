@@ -2192,7 +2192,7 @@ async function sendMessage() {
           id: makeRequestId('chat'),
           method,
           params: {
-            key: sessionKey,
+            sessionKey: sessionKey,
             message: mergedMessage,
             idempotencyKey: makeRequestId('idem')
           }
