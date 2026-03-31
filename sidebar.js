@@ -2604,14 +2604,12 @@ function updateSendButton() {
 
   if (state.isStreaming) {
     els.sendBtn.classList.add('mc-stop');
-    els.sendBtn.classList.remove('mc-send');
     if (sendIcon) sendIcon.style.display = 'none';
     if (stopIcon) stopIcon.style.display = 'block';
     els.sendBtn.title = '点击中止生成';
     els.sendBtn.setAttribute('aria-label', '中止生成');
   } else {
     els.sendBtn.classList.remove('mc-stop');
-    els.sendBtn.classList.add('mc-send');
     if (sendIcon) sendIcon.style.display = 'block';
     if (stopIcon) stopIcon.style.display = 'none';
     els.sendBtn.title = hasText ? '发送消息' : '输入内容后发送';
