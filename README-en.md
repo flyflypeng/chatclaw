@@ -1,5 +1,15 @@
 <div align="center">
   <img src="public/icons/chatclaw-icon.png" alt="ChatClaw Logo" width="128" />
+
+  <p>
+    <img alt="Version" src="https://img.shields.io/badge/version-1.1.0-blue.svg" />
+    <img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg" />
+    <img alt="Chrome" src="https://img.shields.io/badge/browser-Chrome-orange.svg" />
+  </p>
+
+  <p>
+    <b>English</b> | <a href="./README.md">中文</a>
+  </p>
 </div>
 
 # ChatClaw Chrome Extension
@@ -13,14 +23,14 @@
 
 ## ✨ Features
 
-- **Seamless Side Panel**: A persistent panel that keeps AI assistance available while browsing.
-- **Real-time WebSocket Communication**: Low-latency, bidirectional streaming responses.
-- **Multi-Agent Support**: Configure multiple Agents and switch between them quickly.
-- **Fast Context Capture**: One-click attachment of current page URL, title, and selected text.
-- **File Analysis**: Upload text-based files (code, logs, docs) for Agent analysis.
-- **Prompt Management**: Save, search, and reuse prompts with `/<prompt-name>` shortcuts.
-- **Connection Status Indicator**: Instantly view connection health with status dots.
-- **High Security & Privacy**: All data stays in your local browser and personal Agent backend — no third-party servers involved, truly protecting your privacy.
+- 🖥️ **Seamless Side Panel** - A persistent panel that keeps AI assistance available while browsing without blocking content, wake up your lobster anytime.
+- 🔄 **Multi-Agent Support** - Configure multiple Agents and switch between different AI capabilities with one click.
+- 🔒 **High Security & Privacy** - Data flows only between your local browser and your personal Agent backend—zero third-party servers involved.
+- 📎 **Fast Context Capture** - One-click attachment of current page URL, title, and selected text for precise Agent understanding.
+- 📄 **File Analysis** - Upload text-based files (code, logs, docs) for instant Agent analysis.
+- ⌨️ **Prompt Workflow** - Save prompt templates and reuse them quickly with `/<prompt-name>` shortcuts.
+- ⏹️ **Controllable Execution** - Support aborting during task execution for flexible compute resource management.
+- 🟢 **Connection Visualized** - Real-time status indicator to instantly view Agent connection health.
 
 ## 🛣️ Roadmap
 
@@ -31,7 +41,9 @@ ChatClaw is evolving rapidly. Here's what's coming next:
 - [x] **Markdown Rendering**: Better readability for structured responses.
 - [x] **OpenClaw Integration**: Native support for the OpenClaw protocol.
 - [x] **One-click Response Copy**: Copy Agent outputs as Markdown.
+- [x] **Task Abort Feature**: Support aborting during task execution to avoid resource waste.
 - [ ] **MicroClaw High-Risk Tool Execution Confirmation**: Prompt for confirmation before executing high-risk tools.
+- [ ] **Agent Response Referencing**: Support referencing Agent-generated content in replies (similar to message quoting).
 - [ ] **AI-Powered Prompt Optimization**: Built-in prompt refinement tools.
 - [ ] **One-click File Upload for Analysis**: Faster attachment and analysis workflows.
 - [ ] **Frontend Observability for Tool Calls/Skill Activation**: Visualize Agent execution progress.
@@ -47,16 +59,25 @@ ChatClaw is evolving rapidly. Here's what's coming next:
 
 #### Install from Chrome Web Store
 
-1. Visit [ChatClaw Chrome Web Store page](https://chrome.google.com/webstore/detail/chatclaw/...).
-2. Click **Add to Chrome** and confirm the installation.
+> [!TIP]
+> Currently under review in the Chrome Web Store. Stay tuned!
 
-#### Developer Mode
+#### Offline Installation (No build required)
+
+1. Go to the GitHub [Release](https://github.com/flyflypeng/chatclaw/releases/tag/v1.1.0) page and download the latest zip file.
+2. Extract the downloaded zip file to a local folder.
+3. Open Chrome and go to `chrome://extensions/`.
+4. Enable **Developer mode** in the top right corner.
+5. Click **Load unpacked** and select the extracted folder.
+6. The ChatClaw icon will appear in your browser toolbar. We recommend pinning it for quick access.
+
+#### Developer Mode (Source Code Installation)
 
 1. Clone or download this repository to your local machine.
 2. Open Chrome and go to `chrome://extensions/`.
 3. Enable **Developer mode** in the top right corner.
 4. Click **Load unpacked** and select this project folder.
-5. The ChatClaw icon appears in your toolbar. Pin it for quick access.
+5. The ChatClaw icon will appear in your browser toolbar. We recommend pinning it for quick access.
 
 ## 💡 Usage
 

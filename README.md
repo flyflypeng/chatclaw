@@ -1,5 +1,15 @@
 <div align="center">
   <img src="public/icons/chatclaw-icon.png" alt="ChatClaw Logo" width="128" />
+
+  <p>
+    <img alt="Version" src="https://img.shields.io/badge/version-1.1.0-blue.svg" />
+    <img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg" />
+    <img alt="Chrome" src="https://img.shields.io/badge/browser-Chrome-orange.svg" />
+  </p>
+
+  <p>
+    <a href="./README-en.md">English</a> | <b>中文</b>
+  </p>
 </div>
 
 # ChatClaw Chrome 扩展插件
@@ -13,14 +23,14 @@
 
 ## ✨ 功能特性
 
-- **无缝侧边栏界面**：持久化面板，浏览网页时持续提供 AI 辅助。
-- **实时 WebSocket 通信**：低延迟、双向流式响应。
-- **多 Agent 支持**：在设置中配置多个 Agent，并在界面中快速切换。
-- **上下文快速捕获**：一键附加当前网页 URL、标题和划线选中内容。
-- **文件分析**：支持上传文本类文件（代码、日志、文档）供 Agent 分析。
-- **提示词管理**：保存、检索并复用常用 Prompts，支持 `/<提示词名称>` 快捷调用。
-- **实时连接状态**：通过状态点直观查看连接健康度。
-- **安全隐私性高**：数据仅存储在本地浏览器和个人 Agent 后端，全程不经过第三方服务器，真正保护你的隐私。
+- 🖥️ 沉浸式侧边栏 - 持久化面板设计，浏览时不遮挡内容，随时唤醒您的龙虾
+- 🔄 多Agent无缝切换 - 支持配置多种Agent服务，一键切换不同AI能力
+- 🔒 隐私优先架构 - 数据仅流经本地浏览器与您的私有Agent后端，零第三方服务器介入
+- 📎 智能上下文捕获 - 一键注入当前页面URL、标题及选中内容，Agent理解更精准
+- 📄 本地文件解析 - 支持上传代码、日志、文档等文本文件，即时分析内容
+- ⌨️ Prompt工作流 - 保存常用提示词模板，通过 /快捷指令 快速调用，提升复用效率
+- ⏹️ 可控的任务执行 - 支持中途中止任务，灵活掌控计算资源消耗
+- 🟢 连接可视化 - 实时状态指示灯，随时掌握Agent连接健康度
 
 ## 🛣️ 路线图
 
@@ -30,7 +40,8 @@ ChatClaw 正在快速演进中。以下是接下来的开发计划：
 - [x] **悬浮操作按钮**：网页划线后快速触发 Ask ChatClaw。
 - [x] **Markdown 渲染**：更友好的结构化阅读体验。
 - [x] **OpenClaw Agent 集成**：原生支持 OpenClaw 协议。
-- [x] **返回结果一键复制**：支持以 Markdown 格式快速复制回答。
+- [x] **一键复制回答结果**：支持以 Markdown 格式快速复制回答。
+- [x] **任务中止功能**：支持在任务执行过程中中止，避免资源浪费。
 - [ ] **MicroClaw 高风险工具执行确认**：支持返回高风险工具执行前确认消息
 - [ ] **Agent生成内容引用功能**：支持在回答中引用 Agent 生成的内容（类似微信中的消息引用功能）。
 - [ ] **AI 驱动的提示词优化**：内置 Prompt 优化能力。
@@ -44,14 +55,29 @@ ChatClaw 正在快速演进中。以下是接下来的开发计划：
 > [!IMPORTANT]
 > 当前插件支持 OpenClaw Agent 和 MicroClaw Agent 服务。开始前请先确认 Agent 的 WS/WSS 地址可访问。
 
+可以参考下面的部署指南，安全地将你的 Agent 服务部署到互联网上，提供WSS服务接口：
+-  [Tailscale Funnel 内网穿透方案](https://github.com/qingchencloud/clawapp)
+-  [OpenClaw部署全攻略：从本地到云端，解锁HTTPS安全访问](http://53ai.com/news/Openclaw/2026030751806.html)
+-  [手把手教你安全“养虾”：OpenClaw极简部署指南](http://163.com/tech/article/KNHISL3900097U7T.html)
+- [OpenClaw 安全加固指南](https://nebius.com/blog/posts/openclaw-security)
+
 ### 安装步骤
 
 #### Chrome 商店安装
 
-1. 访问 [ChatClaw Chrome 商店页面](https://chrome.google.com/webstore/detail/chatclaw/...)。
-2. 点击 **添加到 Chrome** 按钮，确认安装。
+> [!TIP]
+> Chrome 商店正在上架审核中，敬请期待！
 
-#### 开发者模式
+#### 离线包安装（无需编译）
+
+1. 前往 GitHub 项目的 [Release](https://github.com/flyflypeng/chatclaw/releases/tag/v1.1.0) 页面下载最新的 zip 压缩包。
+2. 将下载的 zip 文件解压到本地文件夹。
+3. 打开 Chrome 浏览器，访问 `chrome://extensions/`。
+4. 在页面右上角开启 **开发者模式 (Developer mode)**。
+5. 点击 **加载已解压的扩展程序 (Load unpacked)**，选择刚刚解压的文件夹中的。
+6. ChatClaw 图标将出现在浏览器工具栏中，建议固定到工具栏以便快速访问。
+
+#### 开发者模式（源码安装）
 
 1. 克隆或下载本项目代码到本地机器。
 2. 打开 Chrome 浏览器，访问 `chrome://extensions/`。
