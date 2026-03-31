@@ -101,7 +101,10 @@ let state = {
   editingPromptId: null,
   slashCommandActive: false,
   slashCommandIndex: 0,
-  slashCommandQuery: ''
+  slashCommandQuery: '',
+  // Streaming state
+  isStreaming: false,
+  isAborting: false
 };
 
 let pendingConnectRequestId = null;
@@ -374,7 +377,13 @@ function setupEventListeners() {
     }
   });
 
-  els.sendBtn.addEventListener('click', sendMessage);
+  els.sendBtn.addEventListener('click', () => {
+    if (state.isStreaming) {
+      abortStreamingResponse();
+    } else {
+      sendMessage();
+    }
+  });
 
   // Listen for selection messages from background/content script
   if (isExtensionEnv) {
@@ -737,6 +746,16 @@ function handleWebSocketMessage(dataStr) {
       return;
     }
 
+    // Handle chat.abort response
+    if (data.type === 'res' && data.method === 'chat.abort') {
+      if (data.error) {
+        console.warn('[ChatClaw] Abort request failed:', data.error);
+      } else {
+        console.log('[ChatClaw] Abort acknowledged, aborted:', data.payload?.aborted);
+      }
+      return;
+    }
+
   } catch (err) {
     console.warn('Failed to parse WS message:', err);
     if (typeof dataStr === 'string') {
@@ -769,7 +788,19 @@ function handleCommonSocketMessage(data) {
     return true;
   }
   if (data.type === 'error') {
-    appendAgentResponse(`\n*[Error: ${data.message || 'Unknown error'}]*`);
+    // MicroClaw error format: { type: "error", error: { code: "...", message: "..." } }
+    // Legacy error format: { type: "error", message: "..." }
+    const errorMessage = data.error?.message || data.message || 'Unknown error';
+    appendAgentResponse(`\n*[Error: ${errorMessage}]*`);
+    resetFinalizeTimeout();
+    finalizeAgentResponse();
+    return true;
+  }
+  if (data.type === 'res' && data.ok === false) {
+    // MicroClaw error response format: { type: "res", ok: false, error: { code: "...", message: "..." } }
+    const errorMessage = data.error?.message || data.payload?.error?.message || 'Request failed';
+    appendAgentResponse(`\n*[Error: ${errorMessage}]*`);
+    resetFinalizeTimeout();
     finalizeAgentResponse();
     return true;
   }
@@ -856,14 +887,27 @@ function handleOpenClawChatEvent(payload) {
   if (phase === 'error') {
     const message = payload?.error?.message || payload?.message || 'Unknown error';
     appendAgentResponse(`\n*[Error: ${message}]*`);
+    resetFinalizeTimeout();
     finalizeAgentResponse();
     return;
   }
   if (phase === 'delta') {
+    // Mark as streaming when we receive delta content
+    if (!state.isStreaming) {
+      state.isStreaming = true;
+      updateSendButton();
+    }
     if (text) appendFinalResponse(text, 'openclaw-chat', { phase, event: 'chat', runId });
     return;
   }
+  if (phase === 'aborted') {
+    // Server signals the stream was aborted, completely ignore it
+    // The local abort already handled UI finalization
+    console.log('[ChatClaw] Received abort event from server (OpenClaw), ignoring');
+    return;
+  }
   if (phase === 'final' || phase === 'done' || phase === 'end') {
+    resetFinalizeTimeout();
     finalizeAgentResponse();
     return;
   }
@@ -876,6 +920,7 @@ function handleOpenClawAgentEvent(payload) {
     if (phase === 'error') {
       const message = payload?.data?.message || payload?.error?.message || 'Unknown error';
       appendAgentResponse(`\n*[Error: ${message}]*`);
+      resetFinalizeTimeout();
       finalizeAgentResponse();
       return;
     }
@@ -1108,6 +1153,34 @@ function handleAgentStreamingEvent(data) {
   const phase = String(payload.state || payload.phase || payload.status || (payload.data && payload.data.phase) || '').toLowerCase();
   const stream = String(payload.stream || '');
 
+  // Handle final/completion FIRST - skip any delta extraction for final phases
+  if (phase === 'final' || phase === 'finish' || phase === 'finished' || phase === 'complete' || phase === 'completed' || phase === 'done' || phase === 'end' || phase === 'ended' || eventName.endsWith('.final') || eventName.endsWith(':final')) {
+    console.log('[ChatClaw] Received final event, finalizing');
+    resetFinalizeTimeout();
+    finalizeAgentResponse();
+    return;
+  }
+
+  // Handle errors - skip delta extraction
+  if (phase === 'error' || eventName.endsWith('.error') || stream === 'error') {
+    // MicroClaw error format: payload.error.message
+    // OpenClaw error format: payload.error.message, payload.message
+    // Generic format: payload.data.error.message
+    const errorMessage = payload.error?.message || payload.message || payload.data?.error?.message || payload.data?.message || extractContentText(payload.data) || 'Unknown error';
+    appendAgentResponse(`\n*[Error: ${errorMessage}]*`);
+    resetFinalizeTimeout();
+    finalizeAgentResponse();
+    return;
+  }
+
+  // Handle abort - skip delta extraction
+  if (phase === 'aborted') {
+    console.log('[ChatClaw] Received abort event from server, ignoring');
+    resetFinalizeTimeout();
+    finalizeAgentResponse();
+    return;
+  }
+
   // Extract delta text
   let delta = '';
   if (phase === 'delta') {
@@ -1118,27 +1191,21 @@ function handleAgentStreamingEvent(data) {
     delta = extractContentText(payload.data.delta);
   } else if (eventName.endsWith('.delta') || eventName.endsWith(':delta')) {
     delta = extractContentText(payload);
-  } else if (eventName === 'chat' && phase !== 'final' && phase !== 'error') {
+  } else if (eventName === 'chat' && phase !== 'final' && phase !== 'error' && phase !== 'aborted') {
     // Fallback for chat events without explicit delta phase
     delta = extractContentText(payload);
   }
 
+  // Mark as streaming when we receive delta content
+  if (phase === 'delta' || delta || eventName.endsWith('.delta') || eventName.endsWith(':delta')) {
+    if (!state.isStreaming) {
+      state.isStreaming = true;
+      updateSendButton();
+    }
+  }
+
   if (delta) {
     appendAgentResponse(delta);
-  }
-
-  // Handle errors
-  if (phase === 'error' || eventName.endsWith('.error') || stream === 'error') {
-    const message = payload.error?.message || payload.message || extractContentText(payload.data) || 'Unknown error';
-    appendAgentResponse(`\n*[Error: ${message}]*`);
-    finalizeAgentResponse();
-    return;
-  }
-
-  // Handle final/completion
-  // Note: We intentionally ignore the final full text to avoid duplication with the streamed delta.
-  if (phase === 'final' || phase === 'finish' || phase === 'finished' || phase === 'complete' || phase === 'completed' || phase === 'done' || phase === 'end' || phase === 'ended' || eventName.endsWith('.final') || eventName.endsWith(':final')) {
-    finalizeAgentResponse();
   }
 }
 
@@ -1227,7 +1294,7 @@ function appendAgentResponse(text) {
   resetFinalizeTimeout();
 }
 
-function finalizeAgentResponse() {
+function finalizeAgentResponse(wasAborted = false) {
   clearOpenClawDeferredFinalize();
   if (finalizeTimeout) {
     clearTimeout(finalizeTimeout);
@@ -1271,6 +1338,14 @@ function finalizeAgentResponse() {
           copyBtn.classList.remove('hidden');
         }
       }
+
+      // If aborted, add abort notice marker
+      if (wasAborted && msgEl) {
+        const bubbleBody = msgEl.querySelector('.markdown-body');
+        if (bubbleBody) {
+          bubbleBody.innerHTML += '<p class="abort-notice"><em>（已中止）</em></p>';
+        }
+      }
     } else {
       if (msgEl) msgEl.remove();
     }
@@ -1286,7 +1361,10 @@ function finalizeAgentResponse() {
   }
   currentRunId = null;
   state.isTyping = false;
+  state.isStreaming = false;
+  state.isAborting = false;
   currentStreamingReopenedFromFinalized = false;
+  updateSendButton();
 }
 
 function normalizeUrl(url) {
@@ -2131,6 +2209,36 @@ async function togglePageContext() {
   }
 }
 
+/**
+ * Abort the current streaming response
+ */
+function abortStreamingResponse() {
+  if (!state.isStreaming || !state.activeSocket) return;
+
+  console.log('[ChatClaw] Aborting streaming response...');
+  state.isAborting = true;
+  updateSendButton();
+
+  const sessionKey = getCurrentSessionKey();
+
+  try {
+    const abortPayload = {
+      type: 'req',
+      id: makeRequestId('abort'),
+      method: 'chat.abort',
+      params: {
+        sessionKey: sessionKey
+      }
+    };
+    state.activeSocket.send(JSON.stringify(abortPayload));
+  } catch (err) {
+    console.error('[ChatClaw] Failed to send abort signal', err);
+  }
+
+  // Trigger local abort handling
+  finalizeAgentResponse(true);
+}
+
 async function sendMessage() {
   const text = els.userInput.value.trim();
   if (!text) return;
@@ -2485,7 +2593,30 @@ function resizeTextarea() {
 }
 
 function updateSendButton() {
-  els.sendBtn.disabled = !els.userInput.value.trim();
+  const hasText = els.userInput.value.trim();
+  const canSend = hasText && state.connected && !state.isStreaming;
+  const canStop = state.isStreaming && state.connected;
+
+  els.sendBtn.disabled = !canSend && !canStop;
+
+  const sendIcon = els.sendBtn.querySelector('.mc-send-icon');
+  const stopIcon = els.sendBtn.querySelector('.mc-stop-icon');
+
+  if (state.isStreaming) {
+    els.sendBtn.classList.add('mc-stop');
+    els.sendBtn.classList.remove('mc-send');
+    if (sendIcon) sendIcon.style.display = 'none';
+    if (stopIcon) stopIcon.style.display = 'block';
+    els.sendBtn.title = '点击中止生成';
+    els.sendBtn.setAttribute('aria-label', '中止生成');
+  } else {
+    els.sendBtn.classList.remove('mc-stop');
+    els.sendBtn.classList.add('mc-send');
+    if (sendIcon) sendIcon.style.display = 'block';
+    if (stopIcon) stopIcon.style.display = 'none';
+    els.sendBtn.title = hasText ? '发送消息' : '输入内容后发送';
+    els.sendBtn.setAttribute('aria-label', '发送');
+  }
 }
 
 function scrollToBottom() {
